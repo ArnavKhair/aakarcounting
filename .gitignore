@@ -1,0 +1,13 @@
+venv/
+__pycache__/
+*.pyc
+.DS_Store
+Output/
+*.app/
+.vehicle_ai_launch.command
+launch.log
+models/weights/
+models/supervision-develop/
+build/
+dist/
+*.egg-info/

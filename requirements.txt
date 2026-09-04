@@ -1,0 +1,12 @@
+ultralytics>=8.0.0
+opencv-python>=4.8.0
+torch>=2.0.0
+pandas>=2.0.0
+numpy>=1.24.0
+huggingface_hub>=0.20.0
+Pillow>=10.0.0
+onnxruntime>=1.16.0
+# supervision is installed from local models/supervision-develop (pip install -e .)
+transformers>=4.43.0
+psutil>=5.9.0
+realesrgan>=0.3.0
