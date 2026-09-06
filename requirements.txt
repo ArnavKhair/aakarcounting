@@ -1,12 +1,27 @@
+# Core detection + tracking
 ultralytics>=8.0.0
-opencv-python>=4.8.0
-torch>=2.0.0
-pandas>=2.0.0
-numpy>=1.24.0
-huggingface_hub>=0.20.0
-Pillow>=10.0.0
-onnxruntime>=1.16.0
-# supervision is installed from local models/supervision-develop (pip install -e .)
 transformers>=4.43.0
+torch>=2.0.0
+onnxruntime>=1.16.0
+
+# supervision provides ByteTrack, DetectionsSmoother and LineZone.
+# Pinned tightly on purpose: this library renames the attributes we depend on
+# between minor releases (LineZone.line became LineZone.vector), so widen the
+# range only after re-checking core/processor.py and core/overlay.py.
+supervision>=0.30.2,<0.31
+
+# Video / image / IO
+opencv-python>=4.8.0
+Pillow>=10.0.0
+numpy>=1.24.0
+pandas>=2.0.0
+huggingface_hub>=0.20.0
+
+# UI
 psutil>=5.9.0
-realesrgan>=0.3.0
+
+# NOT INSTALLABLE, deliberately left out: realesrgan (the "Upscale Video"
+# checkbox). Its dependency basicsr fails to build on current Python and
+# setuptools ("KeyError: '__version__'" in basicsr's setup.py), so
+# `pip install realesrgan` errors out. The checkbox will raise until this is
+# resolved. See README > Setup > Optional upscaler.

@@ -1,8 +1,23 @@
+"""Optional Real-ESRGAN pre-upscaling of frames before detection.
+
+Note before using this: the detector resizes whatever it is given down to its
+own input size (Ultralytics defaults to 640), so upscaling a 720p frame and
+then letting the model shrink it again spends seconds per frame on pixels
+that are immediately discarded. Raise the detector's imgsz first and measure
+before concluding anything about super-resolution.
+"""
 import os
+import urllib.request
 
 import numpy as np
 
-WEIGHTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "weights")
+from core.paths import WEIGHTS_DIR, ensure_weights_dir
+
+WEIGHTS_FILE = "realesr-general-x4v3.pth"
+WEIGHTS_URL = (
+    "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/"
+    "realesr-general-x4v3.pth"
+)
 
 
 class RealESRGANUpscaler:
@@ -22,25 +37,25 @@ class RealESRGANUpscaler:
         from realesrgan import RealESRGANer
         from realesrgan.archs.srvgg_arch import SRVGGNetCompact
 
-        os.makedirs(WEIGHTS_DIR, exist_ok=True)
-        model_path = os.path.join(WEIGHTS_DIR, "realesr-general-x4v3.pth")
+        ensure_weights_dir()
+        model_path = os.path.join(WEIGHTS_DIR, WEIGHTS_FILE)
 
         if not os.path.exists(model_path):
-            import urllib.request
-            url = "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-x4v3.pth"
             print("[Upscaler] Downloading model weights...")
-            urllib.request.urlretrieve(url, model_path)
+            urllib.request.urlretrieve(WEIGHTS_URL, model_path)
             print("[Upscaler] Download complete.")
 
-        model = SRVGGNetCompact(
+        # The checkpoint is a 4x network; outscale in upscale() resamples its
+        # output down to the requested scale.
+        architecture = SRVGGNetCompact(
             num_in_ch=3, num_out_ch=3, num_feat=64,
-            num_conv=32, upscale=4, act_type='prelu',
+            num_conv=32, upscale=4, act_type="prelu",
         )
 
         self._model = RealESRGANer(
             scale=4,
             model_path=model_path,
-            model=model,
+            model=architecture,
             tile=self._tile_size,
             tile_pad=10,
             pre_pad=0,

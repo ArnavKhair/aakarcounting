@@ -5,12 +5,13 @@ import sys
 
 def main():
     if getattr(sys, "frozen", False):
-        app_dir = os.path.dirname(sys.executable)
-        os.chdir(app_dir)
+        os.chdir(os.path.dirname(sys.executable))
     else:
         os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-    os.makedirs("Output", exist_ok=True)
+    from core.paths import OUTPUT_DIR
+
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     from gui import App
 

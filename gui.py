@@ -11,26 +11,15 @@ import cv2
 import psutil
 from PIL import Image, ImageTk
 
-from models.yolo_model import create_yolov8, create_yolov11s, create_yolov11x
-from models.vehicledino import create_vehicledino
-from models.rtdetr import create_rtdetr
-from processor import process_video_multi
-
-ALL_MODELS = {
-    "YOLOv8n": (create_yolov8, True),
-    "YOLOv11-S (UVH-26)": (create_yolov11s, True),
-    "YOLOv11-X (UVH-26)": (create_yolov11x, True),
-    "RT-DETR (r50vd)": (create_rtdetr, True),
-    "VehicleDINO (slow on Mac)": (create_vehicledino, False),
-}
+from core.paths import OUTPUT_DIR
+from core.processor import process_video_multi
+from models import all_specs
 
 MONTH_ABBRS = {
     1: "jan", 2: "feb", 3: "mar", 4: "apr",
     5: "may", 6: "jun", 7: "jul", 8: "aug",
     9: "sept", 10: "oct", 11: "nov", 12: "dec",
 }
-
-OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Output")
 
 
 class ResourceMonitor:
@@ -75,6 +64,7 @@ class App(tk.Tk):
         self.processing = False
         self.cap = None
         self.preview_job = None
+        self.model_specs = all_specs()
         self.model_vars = {}
         self.stop_event = threading.Event()
         self._resource_monitor = None
@@ -127,11 +117,11 @@ class App(tk.Tk):
         model_frame = ttk.LabelFrame(right, text="Select Models", padding=8)
         model_frame.pack(fill="x", pady=(0, 8))
 
-        for model_name, (_, default_on) in ALL_MODELS.items():
-            var = tk.BooleanVar(value=default_on)
-            self.model_vars[model_name] = var
-            cb = ttk.Checkbutton(model_frame, text=model_name, variable=var,
-                                 style="Model.TCheckbutton")
+        for spec in self.model_specs:
+            var = tk.BooleanVar(value=spec.default_enabled)
+            self.model_vars[spec.key] = var
+            cb = ttk.Checkbutton(model_frame, text=spec.display_name, variable=var,
+                                 style="Model.TCheckbutton", command=self._check_ready)
             cb.pack(anchor="w")
 
         upscale_frame = ttk.LabelFrame(right, text="Processing Options", padding=8)
@@ -181,6 +171,9 @@ class App(tk.Tk):
                                     state="disabled", bg="#f0f0f0")
         self.results_text.pack(fill="x")
 
+    def _selected_specs(self):
+        return [spec for spec in self.model_specs if self.model_vars[spec.key].get()]
+
     def _select_video(self):
         path = filedialog.askopenfilename(
             title="Select Video File",
@@ -198,9 +191,7 @@ class App(tk.Tk):
 
     def _generate_output_dir(self):
         today = datetime.date.today()
-        month_abbr = MONTH_ABBRS[today.month]
-        day = today.day
-        date_folder = f"{month_abbr}{day}"
+        date_folder = f"{MONTH_ABBRS[today.month]}{today.day}"
         date_path = os.path.join(OUTPUT_DIR, date_folder)
         os.makedirs(date_path, exist_ok=True)
 
@@ -210,15 +201,15 @@ class App(tk.Tk):
             if match and os.path.isdir(os.path.join(date_path, name)):
                 existing.append(int(match.group(1)))
 
-        next_trial = max(existing) + 1 if existing else 0
+        # trial1 is the first run of the day, trial2 the second, and so on.
+        next_trial = max(existing) + 1 if existing else 1
         trial_path = os.path.join(date_path, f"trial{next_trial}")
         os.makedirs(trial_path, exist_ok=True)
 
         return trial_path
 
     def _check_ready(self):
-        selected = [k for k, v in self.model_vars.items() if v.get()]
-        if self.video_path and selected and not self.processing:
+        if self.video_path and self._selected_specs() and not self.processing:
             self.btn_process.config(state="normal")
         else:
             self.btn_process.config(state="disabled")
@@ -245,6 +236,21 @@ class App(tk.Tk):
         self.cap = cv2.VideoCapture(path)
         self._update_preview()
 
+    def _draw_frame(self, frame_bgr):
+        frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        h, w = frame_rgb.shape[:2]
+        cw = self.canvas.winfo_width()
+        ch = self.canvas.winfo_height()
+        if cw < 2 or ch < 2:
+            cw, ch = 800, 500
+        scale = min(cw / w, ch / h)
+        frame_resized = cv2.resize(frame_rgb, (int(w * scale), int(h * scale)))
+
+        imgtk = ImageTk.PhotoImage(image=Image.fromarray(frame_resized))
+        self.canvas.delete("all")
+        self.canvas.create_image(cw // 2, ch // 2, anchor="center", image=imgtk)
+        self.canvas.image = imgtk
+
     def _update_preview(self):
         if self.processing:
             return
@@ -257,39 +263,31 @@ class App(tk.Tk):
         if not ret:
             return
 
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        h, w = frame_rgb.shape[:2]
-        cw = self.canvas.winfo_width()
-        ch = self.canvas.winfo_height()
-        if cw < 2 or ch < 2:
-            cw, ch = 800, 500
-        scale = min(cw / w, ch / h)
-        new_w, new_h = int(w * scale), int(h * scale)
-        frame_resized = cv2.resize(frame_rgb, (new_w, new_h))
-
-        img = Image.fromarray(frame_resized)
-        imgtk = ImageTk.PhotoImage(image=img)
-
-        self.canvas.delete("all")
-        self.canvas.create_image(cw // 2, ch // 2, anchor="center", image=imgtk)
-        self.canvas.image = imgtk
-
+        self._draw_frame(frame)
         self.preview_job = self.after(33, self._update_preview)
 
     def _start_processing(self):
         if self.processing:
             return
 
-        selected = [ALL_MODELS[name][0]() for name, var in self.model_vars.items() if var.get()]
-        if not selected:
+        specs = self._selected_specs()
+        if not specs:
+            return
+
+        try:
+            selected = [spec.create() for spec in specs]
+        except Exception as e:
+            messagebox.showerror(
+                "Model Error",
+                f"Failed to create a selected model:\n\n{type(e).__name__}: {e}",
+            )
             return
 
         upscaler = None
         if self.upscale_var.get():
             try:
-                from models.upscaler import RealESRGANUpscaler
+                from core.upscaler import RealESRGANUpscaler
                 upscaler = RealESRGANUpscaler(scale=2)
-                upscaler.load()
             except Exception as e:
                 messagebox.showerror(
                     "Upscaler Error",
@@ -330,17 +328,14 @@ class App(tk.Tk):
         try:
             def on_progress(pct):
                 elapsed = time.time() - self._processing_start_time
-                if pct > 0:
-                    eta_seconds = elapsed * (100 - pct) / pct
-                else:
-                    eta_seconds = 0
+                eta_seconds = elapsed * (100 - pct) / pct if pct > 0 else 0
                 self.after(0, lambda p=pct, e=eta_seconds: self._update_progress(p, e))
 
             def on_status(msg):
                 self.after(0, lambda m=msg: self.status_label.config(text=m))
 
             def on_frame(annotated_frame, frame_num, total):
-                self.after(0, lambda f=annotated_frame: self._update_processing_preview(f))
+                self.after(0, lambda f=annotated_frame: self._draw_frame(f))
 
             results = process_video_multi(
                 self.video_path,
@@ -357,24 +352,6 @@ class App(tk.Tk):
         except Exception as e:
             self.after(0, lambda err=str(e): self._on_error(err))
 
-    def _update_processing_preview(self, frame_bgr):
-        frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-        h, w = frame_rgb.shape[:2]
-        cw = self.canvas.winfo_width()
-        ch = self.canvas.winfo_height()
-        if cw < 2 or ch < 2:
-            cw, ch = 800, 500
-        scale = min(cw / w, ch / h)
-        new_w, new_h = int(w * scale), int(h * scale)
-        frame_resized = cv2.resize(frame_rgb, (new_w, new_h))
-
-        img = Image.fromarray(frame_resized)
-        imgtk = ImageTk.PhotoImage(image=img)
-
-        self.canvas.delete("all")
-        self.canvas.create_image(cw // 2, ch // 2, anchor="center", image=imgtk)
-        self.canvas.image = imgtk
-
     def _update_progress(self, pct, eta_seconds):
         self.progress["value"] = pct
         if eta_seconds >= 3600:
@@ -386,8 +363,7 @@ class App(tk.Tk):
             s = int(eta_seconds % 60)
             eta_str = f"ETA: {m}m {s:02d}s"
         else:
-            s = int(eta_seconds)
-            eta_str = f"ETA: {s}s"
+            eta_str = f"ETA: {int(eta_seconds)}s"
         self.status_label.config(text=f"Processing... {pct:.1f}% | {eta_str}", foreground="orange")
 
     def _stop_processing(self):
@@ -432,9 +408,8 @@ class App(tk.Tk):
         self.btn_stop.config(state="disabled")
         self.btn_restart.config(state="disabled")
 
-        for name, var in self.model_vars.items():
-            default = ALL_MODELS[name][1]
-            var.set(default)
+        for spec in self.model_specs:
+            self.model_vars[spec.key].set(spec.default_enabled)
 
     def _start_resource_monitor(self):
         self._stop_resource_monitor()
@@ -468,36 +443,59 @@ class App(tk.Tk):
         if self.video_path:
             self._show_preview(self.video_path)
 
-        lines = [
-            f"Video: {results['video_name']} ({results['resolution']}, {results['total_frames']} frames)",
-            "",
-        ]
-
-        if results.get("upscaled"):
-            lines.insert(1, "Upscaling: Real-ESRGAN 2x applied")
-
-        for model_name, data in results["models"].items():
-            lines.append(f"--- {model_name} ---")
-            lines.append(f"  FPS: {data['processing_fps']}  |  Time: {data['elapsed_seconds']}s")
-            lines.append(f"  Unique vehicles: {data['total_unique_vehicles']}  |  Raw detections: {data['total_detections']}")
-            lines.append(f"  Line crossings IN: {data['line_zone_crossings_in']}  |  OUT: {data['line_zone_crossings_out']}")
-            lines.append(f"  Classes ({len(data['classes'])}): {', '.join(data['classes'][:8])}{'...' if len(data['classes']) > 8 else ''}")
-            counts = data["vehicle_counts"]
-            top5 = list(counts.items())[:5]
-            count_str = ", ".join(f"{k}:{v}" for k, v in top5)
-            lines.append(f"  Unique by class: {count_str}")
-            lines.append("")
-
-        lines.append(f"Output: {results.get('output_dir', 'N/A')}")
-        lines.append("Files: summary.json, vehicle_counts_{model}.csv per model")
-
-        self._set_results_text("\n".join(lines))
+        self._set_results_text("\n".join(self._format_results(results)))
 
         messagebox.showinfo(
             "Complete",
             f"Processed with {len(results['models'])} models.\n\n"
-            f"Summary: {results.get('output_dir', 'N/A')}/summary.json",
+            f"Comparison: {results.get('output_dir', 'N/A')}/canonical_summary.csv",
         )
+
+    def _format_results(self, results):
+        lines = [
+            f"Video: {results['video_name']} ({results['resolution']}, {results['total_frames']} frames)",
+        ]
+        if results.get("upscaled"):
+            lines.append("Upscaling: Real-ESRGAN 2x applied")
+        lines.append("")
+
+        for model_name, data in results["models"].items():
+            lines.append(f"--- {model_name} ---")
+            lines.append(f"  FPS: {data['processing_fps']}  |  Time: {data['elapsed_seconds']}s")
+            lines.append(f"  COUNTED (line crossings): {data['total_crossings']}"
+                         f"   IN: {data['crossings_in']}  OUT: {data['crossings_out']}")
+            lines.append(f"  Tracks seen anywhere: {data['tracks_seen_anywhere']}"
+                         f"  |  rejected as flicker: {data['crossings_rejected_short_track']}"
+                         f"  |  raw detections: {data['total_detections']}")
+
+            native = data["native_classes"]
+            lines.append(
+                f"  Native classes ({len(native)}): "
+                f"{', '.join(native[:8])}{'...' if len(native) > 8 else ''}"
+            )
+            lines.append(
+                "  Native counts: "
+                + ", ".join(f"{k}:{v}" for k, v in list(data["vehicle_counts"].items())[:5])
+            )
+            lines.append(
+                "  Canonical counts: "
+                + ", ".join(f"{k}:{v}" for k, v in data["canonical_counts"].items())
+            )
+            lines.append("")
+
+        unmapped = results.get("unmapped_native_labels") or []
+        if unmapped:
+            lines.append(
+                f"WARNING: {len(unmapped)} native label(s) had no taxonomy mapping "
+                f"and fell back to 'other': {', '.join(unmapped)}"
+            )
+            lines.append("  Add them to core/taxonomy.py _ALIASES.")
+            lines.append("")
+
+        lines.append(f"Output: {results.get('output_dir', 'N/A')}")
+        lines.append("Files: canonical_summary.csv (compare here), crossings_{model}.csv,")
+        lines.append("       summary.json, vehicle_summary.csv, vehicle_counts_{model}.csv")
+        return lines
 
     def _on_error(self, msg):
         self.processing = False
