@@ -1,8 +1,6 @@
 # Core detection + tracking
 ultralytics>=8.0.0
-transformers>=4.43.0
 torch>=2.0.0
-onnxruntime>=1.16.0
 
 # supervision provides ByteTrack, DetectionsSmoother and LineZone.
 # Pinned tightly on purpose: this library renames the attributes we depend on
@@ -19,9 +17,3 @@ huggingface_hub>=0.20.0
 
 # UI
 psutil>=5.9.0
-
-# NOT INSTALLABLE, deliberately left out: realesrgan (the "Upscale Video"
-# checkbox). Its dependency basicsr fails to build on current Python and
-# setuptools ("KeyError: '__version__'" in basicsr's setup.py), so
-# `pip install realesrgan` errors out. The checkbox will raise until this is
-# resolved. See README > Setup > Optional upscaler.

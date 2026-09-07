@@ -100,8 +100,7 @@ def _safe_filename(name: str) -> str:
 
 def run_single_model(model: BaseModel, video_path: str, output_dir: str,
                      progress_callback=None, status_callback=None,
-                     frame_callback=None, stop_event=None,
-                     upscaler=None) -> dict:
+                     frame_callback=None, stop_event=None) -> dict:
     """Run one model over the whole video, counting line crossings."""
     safe_name = _safe_filename(model.name)
     detections_csv = os.path.join(output_dir, f"vehicle_counts_{safe_name}.csv")
@@ -124,8 +123,7 @@ def run_single_model(model: BaseModel, video_path: str, output_dir: str,
     smoother = sv.DetectionsSmoother(length=config.SMOOTHER_LENGTH)
     class_index = ClassIndex()
 
-    # Built from the first decoded frame, since an upscaler changes the frame
-    # size away from the container's reported dimensions.
+    # Built from the first decoded frame.
     line_zone = None
     line_y = None
 
@@ -146,9 +144,6 @@ def run_single_model(model: BaseModel, video_path: str, output_dir: str,
         ret, frame = cap.read()
         if not ret:
             break
-
-        if upscaler is not None:
-            frame = upscaler.upscale(frame)
 
         if line_zone is None:
             height, width = frame.shape[:2]
@@ -374,8 +369,7 @@ def _write_canonical_summary(path: str, models: dict):
 
 def process_video_multi(video_path, output_dir, models: list[BaseModel],
                         progress_callback=None, status_callback=None,
-                        frame_callback=None, stop_event=None,
-                        upscaler=None) -> dict:
+                        frame_callback=None, stop_event=None) -> dict:
     """Run every selected model over the same video and write the comparison."""
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -389,18 +383,10 @@ def process_video_multi(video_path, output_dir, models: list[BaseModel],
 
     taxonomy.reset_unmapped()
 
-    if upscaler is not None:
-        if status_callback:
-            status_callback("Loading upscaler...")
-        upscaler.load()
-        if status_callback:
-            status_callback("Upscaler ready")
-
     results = {
         "video": video_path,
         "video_name": os.path.splitext(os.path.basename(video_path))[0],
         "resolution": f"{width}x{height}",
-        "upscaled": upscaler is not None,
         "fps": fps,
         "total_frames": total_frames,
         "counting_method": (
@@ -437,7 +423,6 @@ def process_video_multi(video_path, output_dir, models: list[BaseModel],
             status_callback=status_callback,
             frame_callback=frame_callback,
             stop_event=stop_event,
-            upscaler=upscaler,
         )
 
     results["unmapped_native_labels"] = taxonomy.unmapped_labels()

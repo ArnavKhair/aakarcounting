@@ -124,14 +124,6 @@ class App(tk.Tk):
                                  style="Model.TCheckbutton", command=self._check_ready)
             cb.pack(anchor="w")
 
-        upscale_frame = ttk.LabelFrame(right, text="Processing Options", padding=8)
-        upscale_frame.pack(fill="x", pady=(0, 8))
-
-        self.upscale_var = tk.BooleanVar(value=False)
-        upscale_cb = ttk.Checkbutton(upscale_frame, text="Upscale Video (2x Real-ESRGAN)",
-                                     variable=self.upscale_var)
-        upscale_cb.pack(anchor="w")
-
         control_frame = ttk.Frame(right)
         control_frame.pack(fill="x", pady=(0, 4))
 
@@ -283,19 +275,6 @@ class App(tk.Tk):
             )
             return
 
-        upscaler = None
-        if self.upscale_var.get():
-            try:
-                from core.upscaler import RealESRGANUpscaler
-                upscaler = RealESRGANUpscaler(scale=2)
-            except Exception as e:
-                messagebox.showerror(
-                    "Upscaler Error",
-                    f"Failed to initialize upscaler:\n\n{type(e).__name__}: {e}\n\n"
-                    f"Run from terminal to see full traceback.",
-                )
-                return
-
         self.processing = True
         self.stop_event.clear()
         self._check_ready()
@@ -320,11 +299,11 @@ class App(tk.Tk):
         self._start_resource_monitor()
 
         self._processing_thread = threading.Thread(
-            target=self._run_processing, args=(selected, output_dir, upscaler), daemon=True
+            target=self._run_processing, args=(selected, output_dir), daemon=True
         )
         self._processing_thread.start()
 
-    def _run_processing(self, models, output_dir, upscaler=None):
+    def _run_processing(self, models, output_dir):
         try:
             def on_progress(pct):
                 elapsed = time.time() - self._processing_start_time
@@ -345,7 +324,6 @@ class App(tk.Tk):
                 status_callback=on_status,
                 frame_callback=on_frame,
                 stop_event=self.stop_event,
-                upscaler=upscaler,
             )
             self.after(0, lambda r=results: self._on_complete(r))
 
@@ -455,8 +433,6 @@ class App(tk.Tk):
         lines = [
             f"Video: {results['video_name']} ({results['resolution']}, {results['total_frames']} frames)",
         ]
-        if results.get("upscaled"):
-            lines.append("Upscaling: Real-ESRGAN 2x applied")
         lines.append("")
 
         for model_name, data in results["models"].items():
