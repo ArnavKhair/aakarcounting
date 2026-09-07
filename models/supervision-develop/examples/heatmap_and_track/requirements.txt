@@ -1,0 +1,4 @@
+rfdetr
+supervision
+ultralytics
+jsonargparse[signatures]
