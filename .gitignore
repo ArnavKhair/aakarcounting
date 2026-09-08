@@ -11,3 +11,7 @@ models/weights/
 build/
 dist/
 *.egg-info/
+ui-options/*/assets/sample-video.mp4
+ui-options/*/assets/clip.avi
+ui-options/*/assets/sample-frame.jpg
+ui-options/*/assets/sample-road.jpg

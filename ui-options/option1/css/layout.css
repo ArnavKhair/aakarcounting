@@ -1,0 +1,296 @@
+.app {
+  display: flex;
+  height: 100vh;
+  background: var(--color-bg);
+}
+
+/* Content area: sidebar + workspace side by side */
+.content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Sidebar */
+.sidebar {
+  width: var(--sidebar-width);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  z-index: var(--z-instruction-bar);
+  overflow-y: auto;
+}
+
+.sidebar__instruction {
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--color-border-light);
+  height: 200px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar__instruction-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.sidebar__instruction-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.sidebar__instruction-label {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sidebar__instruction-text {
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+  line-height: var(--line-height-normal);
+  flex: 1;
+}
+
+/* Sidebar tool section */
+.sidebar__tools {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.sidebar__section-label {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: var(--space-2);
+}
+
+.sidebar__tool-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* Sidebar tool buttons (vertical layout) */
+.sidebar .tool-btn {
+  width: 100%;
+  height: 36px;
+  justify-content: flex-start;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  font-size: var(--font-size-sm);
+}
+
+.sidebar .tool-btn span {
+  pointer-events: none;
+}
+
+/* Sidebar CTA section */
+.sidebar__actions {
+  margin-top: auto;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--color-border-light);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.sidebar__actions .btn {
+  width: 100%;
+  justify-content: center;
+}
+
+/* Divider in sidebar */
+.sidebar .divider {
+  width: 100%;
+  height: 1px;
+  margin: var(--space-2) 0;
+}
+
+/* Workspace - fills remaining width */
+.workspace {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: #1a1a1a;
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Video + canvas overlay wrapper */
+.annotation-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+
+.annotation-container video {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  pointer-events: none;
+}
+
+.annotation-container canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 5;
+}
+
+/* Cursor modes */
+.annotation-container[data-mode="idle"] canvas {
+  pointer-events: none;
+  cursor: default;
+}
+
+.annotation-container[data-mode="idle"] video {
+  pointer-events: auto;
+  cursor: default;
+}
+
+/* Pen tool cursor — pen icon with tip hotspot and white outline */
+.annotation-container[data-mode="drawing-polygon"] canvas {
+  pointer-events: auto;
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='M12 19l7-7 3 3-7 7-3-3z' stroke='white' stroke-width='4'/%3E%3Cpath d='M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z' stroke='white' stroke-width='4'/%3E%3Cpath d='M2 2l7.586 7.586' stroke='white' stroke-width='4'/%3E%3Ccircle cx='11' cy='11' r='2' stroke='white' stroke-width='4'/%3E%3Cpath d='M12 19l7-7 3 3-7 7-3-3z' stroke='%232563eb' stroke-width='2'/%3E%3Cpath d='M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z' stroke='%232563eb' stroke-width='2'/%3E%3Cpath d='M2 2l7.586 7.586' stroke='%232563eb' stroke-width='2'/%3E%3Ccircle cx='11' cy='11' r='2' stroke='%232563eb' stroke-width='2'/%3E%3C/svg%3E") 2 2, crosshair;
+}
+
+.annotation-container[data-mode="drawing-polygon"] video {
+  pointer-events: none;
+}
+
+/* Line tool cursor — line icon with left endpoint hotspot and white outline */
+.annotation-container[data-mode="drawing-line"] canvas {
+  pointer-events: auto;
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none'%3E%3Cline x1='5' y1='19' x2='19' y2='5' stroke='white' stroke-width='4'/%3E%3Ccircle cx='5' cy='19' r='2' stroke='white' stroke-width='4'/%3E%3Ccircle cx='19' cy='5' r='2' stroke='white' stroke-width='4'/%3E%3Cline x1='5' y1='19' x2='19' y2='5' stroke='%23dc2626' stroke-width='2'/%3E%3Ccircle cx='5' cy='19' r='2' stroke='%23dc2626' stroke-width='2'/%3E%3Ccircle cx='19' cy='5' r='2' stroke='%23dc2626' stroke-width='2'/%3E%3C/svg%3E") 5 19, crosshair;
+}
+
+.annotation-container[data-mode="drawing-line"] video {
+  pointer-events: none;
+}
+
+/* Eraser tool cursor — eraser icon with bottom-left hotspot and white outline */
+.annotation-container[data-mode="editing"] canvas {
+  pointer-events: auto;
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21' stroke='white' stroke-width='4'/%3E%3Cpath d='M22 21H7' stroke='white' stroke-width='4'/%3E%3Cpath d='m5 11 9 9' stroke='white' stroke-width='4'/%3E%3Cpath d='m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21' stroke='%23dc2626' stroke-width='2'/%3E%3Cpath d='M22 21H7' stroke='%23dc2626' stroke-width='2'/%3E%3Cpath d='m5 11 9 9' stroke='%23dc2626' stroke-width='2'/%3E%3C/svg%3E") 5 21, pointer;
+}
+
+.annotation-container[data-mode="editing"] video {
+  pointer-events: none;
+}
+
+/* Legacy annotating mode fallback */
+.annotation-container[data-mode="annotating"] canvas {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
+.annotation-container[data-mode="annotating"] video {
+  pointer-events: none;
+}
+
+/* Panels overlaying workspace */
+.canvas-panel {
+  position: absolute;
+  z-index: var(--z-panel);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-3);
+}
+
+/* Label input panel — positioned dynamically over polygon centroid */
+.label-panel {
+  transform: translate(-50%, -50%);
+  display: none;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 240px;
+}
+
+.label-panel.visible {
+  display: flex;
+}
+
+/* Action bar (preview state) */
+.action-bar {
+  bottom: var(--space-4);
+  left: 50%;
+  transform: translateX(-50%);
+  display: none;
+  gap: var(--space-2);
+}
+
+.action-bar.visible {
+  display: flex;
+}
+
+/* Error banner */
+.error-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: var(--color-danger);
+  color: var(--color-text-inverse);
+  padding: var(--space-3) var(--space-4);
+  z-index: 9999;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  display: none;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.error-banner.visible {
+  display: flex;
+}
+
+/* Complete screen */
+.complete-screen {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: var(--space-6);
+  background: var(--color-bg);
+  z-index: var(--z-complete-screen);
+}
+
+.complete-screen.visible {
+  display: flex;
+}
+
+.complete-screen__title {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
