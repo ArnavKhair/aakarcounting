@@ -64,7 +64,7 @@ SMOOTHER_LENGTH = 5
 # short. The vehicles are lost to association failure, not the filter.
 #
 # 2 is close to free. 3 is a reasonable trade. 5 is not recommended.
-DETECTION_STRIDE = 1
+DETECTION_STRIDE = 2
 
 
 # --- Counting --------------------------------------------------------------
