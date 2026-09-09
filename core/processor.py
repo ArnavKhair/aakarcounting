@@ -114,8 +114,13 @@ def run_single_model(model: BaseModel, video_path: str, output_dir: str,
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
+    stride = max(1, int(config.DETECTION_STRIDE))
+
     tracker = sv.ByteTrack(
-        frame_rate=fps,
+        # The tracker only sees every Nth frame, so its effective rate -- and
+        # therefore how long lost_track_buffer keeps a track alive in real
+        # seconds -- must be scaled to match.
+        frame_rate=fps / stride,
         track_activation_threshold=config.TRACK_ACTIVATION_THRESHOLD,
         minimum_matching_threshold=config.MINIMUM_MATCHING_THRESHOLD,
         lost_track_buffer=config.LOST_TRACK_BUFFER,
@@ -143,7 +148,14 @@ def run_single_model(model: BaseModel, video_path: str, output_dir: str,
             partial = True
             break
 
-        ret, frame = cap.read()
+        # grab() advances without decoding; only frames we actually run
+        # detection on are paid for with retrieve().
+        if not cap.grab():
+            break
+        if frame_num % stride:
+            frame_num += 1
+            continue
+        ret, frame = cap.retrieve()
         if not ret:
             break
 

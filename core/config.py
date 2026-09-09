@@ -39,6 +39,33 @@ MINIMUM_CONSECUTIVE_FRAMES = 1
 
 SMOOTHER_LENGTH = 5
 
+# Run detection on every Nth frame; 1 means every frame. Skipped frames are
+# not decoded at all (cv2 grab() without retrieve()), so the saving covers
+# both detection and decode, and speedup is close to linear.
+#
+# The cost is paid in tracking. ByteTrack associates by IoU between
+# consecutive updates, and striding multiplies apparent per-frame
+# displacement by N until boxes no longer overlap between updates.
+#
+# Measured over a fixed 1200-frame (40s) segment, YOLOv11-S, native imgsz:
+#
+#   stride  crossings   speedup   two_wheeler   car
+#        1         55     1.00x            15    33
+#        2         51     2.07x            13    32
+#        3         49     3.03x            12    32
+#        5         37     5.09x             6    29
+#
+# The loss is a BIAS, not uniform shrinkage: at stride 5 two-wheelers drop
+# 60% while cars drop 12%, so the class mix itself is distorted. Small fast
+# vehicles are exactly what this footage already under-counts.
+#
+# Not fixable via MIN_TRACK_FRAMES_TO_COUNT -- at stride 5 the shortest
+# counted track was still 18 processed frames, so nothing was rejected as
+# short. The vehicles are lost to association failure, not the filter.
+#
+# 2 is close to free. 3 is a reasonable trade. 5 is not recommended.
+DETECTION_STRIDE = 1
+
 
 # --- Counting --------------------------------------------------------------
 
