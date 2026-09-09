@@ -10,3 +10,7 @@ models/weights/
 build/
 dist/
 *.egg-info/
+
+# Local video copies and analysis tool output
+data/
+heatmap_out/
