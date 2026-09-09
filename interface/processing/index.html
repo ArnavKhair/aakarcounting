@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vehicle Counting AI — Processing</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="../shared/css/variables.css">
+  <link rel="stylesheet" href="../shared/css/base.css">
+  <link rel="stylesheet" href="../shared/css/components.css">
+  <link rel="stylesheet" href="css/processing.css">
+</head>
+<body>
+  <div class="app">
+    <div class="content">
+      <aside class="sidebar">
+        <div class="sidebar__section">
+          <div class="sidebar__section-label">Status</div>
+          <div class="sidebar__status" id="status-text">Starting...</div>
+        </div>
+
+        <div class="sidebar__section">
+          <div class="sidebar__section-label">Model</div>
+          <div class="sidebar__model">
+            <span class="sidebar__model-dot"></span>
+            <span>YOLOv11-S (UVH-26)</span>
+          </div>
+        </div>
+
+        <div class="sidebar__section">
+          <div class="sidebar__section-label">Progress</div>
+          <div class="sidebar__progress">
+            <div class="progress-bar">
+              <div class="progress-bar__fill" id="progress-fill"></div>
+            </div>
+            <div class="progress-bar__text" id="progress-text">0%</div>
+          </div>
+          <div class="sidebar__eta" id="eta-text"></div>
+          <div class="sidebar__frames" id="frames-text">0 / 0 frames</div>
+          <div class="sidebar__fps" id="fps-text"></div>
+        </div>
+
+        <div class="sidebar__actions">
+          <button class="btn btn--danger btn--sm" id="btn-stop">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="6" y="4" width="4" height="16"/>
+              <rect x="14" y="4" width="4" height="16"/>
+            </svg>
+            Stop Processing
+          </button>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <div class="frame-container" id="frame-container">
+          <img id="frame-display" alt="Processing frame" class="frame-image">
+          <div class="frame-placeholder" id="frame-placeholder">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+            <span>Waiting for frames...</span>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <div class="error-banner" id="error-banner"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

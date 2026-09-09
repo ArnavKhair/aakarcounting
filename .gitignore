@@ -15,3 +15,13 @@ ui-options/*/assets/sample-video.mp4
 ui-options/*/assets/clip.avi
 ui-options/*/assets/sample-frame.jpg
 ui-options/*/assets/sample-road.jpg
+
+# Video assets in interface (too large for git)
+interface/*/assets/*.mp4
+interface/*/assets/*.avi
+interface/*/assets/*.mov
+interface/*/assets/*.mkv
+interface/*/assets/*.webm
+
+# Temp uploads
+vcai_uploads_*/
