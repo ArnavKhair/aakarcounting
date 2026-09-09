@@ -26,7 +26,7 @@ STRIDE = 32
 
 # --- Tracking --------------------------------------------------------------
 
-TRACK_ACTIVATION_THRESHOLD = 0.5
+TRACK_ACTIVATION_THRESHOLD = 0.25
 MINIMUM_MATCHING_THRESHOLD = 0.8
 LOST_TRACK_BUFFER = 60
 
@@ -46,7 +46,7 @@ SMOOTHER_LENGTH = 5
 # frames over its whole life. This replaces MINIMUM_CONSECUTIVE_FRAMES as the
 # false-positive filter: it rejects flicker without ever making a real vehicle
 # invisible to the tracker.
-MIN_TRACK_FRAMES_TO_COUNT = 3
+MIN_TRACK_FRAMES_TO_COUNT = 1
 
 # Counting line height as a fraction of frame height.
 #

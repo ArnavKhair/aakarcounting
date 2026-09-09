@@ -161,6 +161,8 @@ def run_single_model(model: BaseModel, video_path: str, output_dir: str,
                     line_zones.append(sv.LineZone(
                         start=sv.Point(x=start_pt[0], y=start_pt[1]),
                         end=sv.Point(x=end_pt[0], y=end_pt[1]),
+                        triggering_anchors=(sv.Position.CENTER,),
+                        minimum_crossing_threshold=0,
                     ))
             else:
                 # Fallback: default horizontal line
@@ -168,6 +170,8 @@ def run_single_model(model: BaseModel, video_path: str, output_dir: str,
                 line_zones = [sv.LineZone(
                     start=sv.Point(x=0, y=line_y),
                     end=sv.Point(x=width, y=line_y),
+                    triggering_anchors=(sv.Position.CENTER,),
+                    minimum_crossing_threshold=0,
                 )]
 
         detections = model.detect(frame)
