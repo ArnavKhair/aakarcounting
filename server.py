@@ -300,9 +300,16 @@ def _run_processing(
             print(f"[Processing] Status: {msg}")
             _ws_send_sync(websocket, loop, "status", {"text": msg})
 
+        last_progress_sent = [0.0]
+
         def on_progress(frame_num, total_frames):
-            if frame_num % 10 != 0 and frame_num != total_frames:
+            # Throttle by wall clock, not by frame number. DETECTION_STRIDE
+            # means the processor only reports on frames it actually ran, so a
+            # `frame_num % 10` test silently never fires for even strides.
+            now = time.time()
+            if now - last_progress_sent[0] < 0.4 and frame_num != total_frames:
                 return
+            last_progress_sent[0] = now
             elapsed = time.time() - start_time
             percent = (frame_num / total_frames * 100) if total_frames > 0 else 0
             fps = frame_num / elapsed if elapsed > 0 else 0
