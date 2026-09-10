@@ -6,8 +6,8 @@ factory and adding one MODEL_REGISTRY entry -- nothing in the GUI or the
 processing pipeline needs to change.
 
 Factories are imported lazily so that starting the app does not pull in
-ultralytics, transformers and onnxruntime, and so a missing optional
-dependency only breaks the model that needs it.
+ultralytics, and so a missing optional dependency only breaks the model
+that needs it.
 """
 import importlib
 from dataclasses import dataclass
@@ -30,39 +30,11 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
     spec.key: spec
     for spec in [
         ModelSpec(
-            key="yolov8n",
-            display_name="YOLOv8n",
-            module="models.yolov8n",
-            default_enabled=True,
-            description="8 Indian classes. Smallest model; speed reference.",
-        ),
-        ModelSpec(
             key="yolov11s_uvh26",
             display_name="YOLOv11-S (UVH-26)",
             module="models.yolov11s_uvh26",
             default_enabled=True,
             description="UVH-26 taxonomy. Best accuracy/speed balance.",
-        ),
-        ModelSpec(
-            key="yolov11x_uvh26",
-            display_name="YOLOv11-X (UVH-26)",
-            module="models.yolov11x_uvh26",
-            default_enabled=True,
-            description="UVH-26 taxonomy at high capacity. Slow on Apple Silicon.",
-        ),
-        ModelSpec(
-            key="rtdetr",
-            display_name="RT-DETR (r50vd)",
-            module="models.rtdetr",
-            default_enabled=True,
-            description="COCO-pretrained generic baseline. 4 classes only.",
-        ),
-        ModelSpec(
-            key="vehicledino",
-            display_name="VehicleDINO",
-            module="models.vehicledino",
-            default_enabled=False,
-            description="ONNX INT8. Output decoding unverified; slow on CPU.",
         ),
     ]
 }

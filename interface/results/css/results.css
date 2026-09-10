@@ -1,0 +1,287 @@
+/* ── Layout (matches processing's sidebar + workspace) ──────────────── */
+.app {
+  display: flex;
+  height: 100vh;
+  background: var(--color-bg);
+}
+
+.content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.sidebar {
+  width: var(--sidebar-width);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  overflow-y: auto;
+}
+
+.workspace {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* ── Sidebar sections ─────────────────────────────────────────────── */
+.sidebar__section {
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.sidebar__section-label {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: var(--space-2);
+}
+
+.sidebar__model {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+}
+
+.sidebar__model-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  flex-shrink: 0;
+}
+
+/* ── Metrics (nested in sidebar) ──────────────────────────────────── */
+.sidebar__metrics {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.metric-card {
+  background: var(--color-primary-light);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+}
+
+.metric-card__value {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-primary);
+}
+
+.metric-card__label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+/* ── Downloads ────────────────────────────────────────────────────── */
+.sidebar__downloads {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.sidebar__downloads .btn {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+/* ── Sidebar actions (bottom) ─────────────────────────────────────── */
+.sidebar__actions {
+  margin-top: auto;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--color-border-light);
+}
+
+.sidebar__actions .btn {
+  width: 100%;
+  justify-content: center;
+}
+
+/* ── Workspace (main content) ─────────────────────────────────────── */
+.results-scroll {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  background: var(--color-bg);
+}
+
+.results-container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: var(--space-8);
+}
+
+.results-title {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+  margin-bottom: var(--space-6);
+}
+
+/* ── Processing stats (in main content) ───────────────────────────── */
+.stats-section {
+  margin-bottom: var(--space-8);
+}
+
+.stats-section .section-title {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+  margin-bottom: var(--space-4);
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-3);
+}
+
+.stats-grid .stat-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+
+.stats-grid .stat-card__value {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.stats-grid .stat-card__label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  margin-top: var(--space-1);
+}
+
+/* ── Road sections (stacked) ──────────────────────────────────────── */
+.road-section {
+  margin-bottom: var(--space-8);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.road-section__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--color-border-light);
+  background: var(--color-bg);
+}
+
+.road-section__name {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.road-section__total {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-primary);
+}
+
+.road-section__total-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  margin-left: var(--space-2);
+}
+
+.road-section__body {
+  padding: var(--space-5);
+}
+
+.road-section__chart {
+  height: 200px;
+  margin-bottom: var(--space-5);
+}
+
+.road-section__chart canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* ── Table (per-road) ─────────────────────────────────────────────── */
+.road-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.road-table th {
+  background: var(--color-bg);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-align: left;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.road-table td {
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.road-table tr:last-child td {
+  border-bottom: none;
+}
+
+.road-table td:last-child {
+  font-weight: var(--font-weight-semibold);
+  text-align: right;
+}
+
+/* ── Info ─────────────────────────────────────────────────────────── */
+.info-section {
+  margin-bottom: var(--space-8);
+}
+
+.info-title {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+  margin-bottom: var(--space-4);
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-3);
+}
+
+.info-item {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+}
+
+.info-item__label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-1);
+}
+
+.info-item__value {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text);
+}

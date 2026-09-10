@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vehicle Counting AI — Results</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="../shared/css/variables.css">
+  <link rel="stylesheet" href="../shared/css/base.css">
+  <link rel="stylesheet" href="../shared/css/components.css">
+  <link rel="stylesheet" href="css/results.css">
+</head>
+<body>
+  <div class="app">
+    <div class="content">
+      <aside class="sidebar">
+        <div class="sidebar__section">
+          <div class="sidebar__section-label">Model</div>
+          <div class="sidebar__model">
+            <span class="sidebar__model-dot"></span>
+            <span id="model-name">YOLOv11-S (UVH-26)</span>
+          </div>
+        </div>
+
+        <div class="sidebar__section">
+          <div class="sidebar__section-label">Key Metrics</div>
+          <div class="sidebar__metrics">
+            <div class="metric-card">
+              <div class="metric-card__value" id="metric-crossings">0</div>
+              <div class="metric-card__label">Total Crossings</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-card__value" id="metric-roads">0</div>
+              <div class="metric-card__label">Roads Counted</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sidebar__section">
+          <div class="sidebar__section-label">Downloads</div>
+          <div class="sidebar__downloads">
+            <button class="btn btn--secondary btn--sm" id="btn-download-summary">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              Summary CSV
+            </button>
+            <button class="btn btn--secondary btn--sm" id="btn-download-crossings">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              Crossings CSV
+            </button>
+            <button class="btn btn--secondary btn--sm" id="btn-download-json">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              Summary JSON
+            </button>
+          </div>
+        </div>
+
+        <div class="sidebar__actions">
+          <button class="btn btn--primary btn--sm" id="btn-new-video">
+            Process Another Video
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="5" y1="12" x2="19" y2="12"/>
+              <polyline points="12 5 19 12 12 19"/>
+            </svg>
+          </button>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <div class="results-scroll">
+          <div class="results-container">
+            <h1 class="results-title">Processing Complete</h1>
+
+            <div class="stats-section">
+              <h2 class="section-title">Processing Stats</h2>
+              <div class="stats-grid">
+                <div class="stat-card">
+                  <div class="stat-card__value" id="stat-fps">-</div>
+                  <div class="stat-card__label">Processing FPS</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-card__value" id="stat-time">-</div>
+                  <div class="stat-card__label">Elapsed Time</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-card__value" id="stat-frames">-</div>
+                  <div class="stat-card__label">Total Frames</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-card__value" id="stat-detections">-</div>
+                  <div class="stat-card__label">Detections</div>
+                </div>
+              </div>
+            </div>
+
+            <div id="road-sections"></div>
+
+            <div class="info-section" id="info-section">
+              <h2 class="info-title">Video Info</h2>
+              <div class="info-grid" id="info-grid">
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <div class="error-banner" id="error-banner"></div>
+
+  <script src="js/chart.min.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

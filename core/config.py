@@ -26,7 +26,7 @@ STRIDE = 32
 
 # --- Tracking --------------------------------------------------------------
 
-TRACK_ACTIVATION_THRESHOLD = 0.5
+TRACK_ACTIVATION_THRESHOLD = 0.25
 MINIMUM_MATCHING_THRESHOLD = 0.8
 LOST_TRACK_BUFFER = 60
 
@@ -64,6 +64,12 @@ SMOOTHER_LENGTH = 5
 # short. The vehicles are lost to association failure, not the filter.
 #
 # 2 is close to free. 3 is a reasonable trade. 5 is not recommended.
+#
+# CAVEAT: measured with TRACK_ACTIVATION_THRESHOLD=0.5 and
+# MIN_TRACK_FRAMES_TO_COUNT=3, before both were loosened to 0.25 and 1, and
+# before LineZone moved to a CENTER anchor. Those changes should recover some
+# of the striding loss, so re-measure before trusting the exact figures. The
+# direction and the class bias are expected to hold.
 DETECTION_STRIDE = 2
 
 
@@ -73,7 +79,7 @@ DETECTION_STRIDE = 2
 # frames over its whole life. This replaces MINIMUM_CONSECUTIVE_FRAMES as the
 # false-positive filter: it rejects flicker without ever making a real vehicle
 # invisible to the tracker.
-MIN_TRACK_FRAMES_TO_COUNT = 3
+MIN_TRACK_FRAMES_TO_COUNT = 1
 
 # Counting line height as a fraction of frame height.
 #

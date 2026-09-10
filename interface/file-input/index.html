@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vehicle Counting AI</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="../shared/css/variables.css">
+  <link rel="stylesheet" href="../shared/css/base.css">
+  <link rel="stylesheet" href="../shared/css/components.css">
+  <link rel="stylesheet" href="css/file-input.css">
+</head>
+<body>
+  <div class="upload-page">
+    <div class="upload-card">
+      <div class="upload-card__icon">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/>
+          <line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+      </div>
+
+      <h1 class="upload-card__title">Vehicle Counting AI</h1>
+      <p class="upload-card__subtitle">Multi-Model Comparison for Indian Roads</p>
+
+      <div class="upload-card__divider"></div>
+
+      <h2 class="upload-card__heading">Select a video file</h2>
+      <p class="upload-card__formats">MP4, AVI, MOV, MKV, WebM</p>
+
+      <input type="file" id="file-input" accept="video/*,.mp4,.avi,.mov,.mkv,.webm" hidden>
+
+      <div class="upload-card__select" id="btn-select">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/>
+          <line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        Select Video File
+      </div>
+
+      <div class="upload-card__info" id="upload-info" style="display: none;">
+        <div class="upload-card__filename" id="info-filename"></div>
+        <div class="upload-card__meta" id="info-meta"></div>
+      </div>
+
+      <div class="upload-card__continue" id="btn-continue" style="display: none;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="5" y1="12" x2="19" y2="12"/>
+          <polyline points="12 5 19 12 12 19"/>
+        </svg>
+        Annotate Video
+      </div>
+
+      <div class="upload-card__progress" id="upload-progress" style="display: none;">
+        <div class="progress-bar">
+          <div class="progress-bar__fill" id="progress-fill"></div>
+        </div>
+        <div class="progress-bar__text" id="progress-text">Uploading...</div>
+      </div>
+    </div>
+
+    <div class="error-banner" id="error-banner"></div>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

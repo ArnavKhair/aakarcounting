@@ -101,8 +101,14 @@ def _safe_filename(name: str) -> str:
 def run_single_model(model: BaseModel, video_path: str, output_dir: str,
                      progress_callback=None, status_callback=None,
                      frame_callback=None, stop_event=None,
-                     upscaler=None) -> dict:
-    """Run one model over the whole video, counting line crossings."""
+                     counting_lines=None, road_labels=None) -> dict:
+    """Run one model over the whole video, counting line crossings.
+
+    counting_lines: optional list of ((sx, sy), (ex, ey)) pixel coordinate
+    tuples defining user-drawn counting lines. When provided, these replace
+    the default horizontal line at config.LINE_POSITION.
+    road_labels: optional list of road name strings, one per counting line.
+    """
     safe_name = _safe_filename(model.name)
     detections_csv = os.path.join(output_dir, f"vehicle_counts_{safe_name}.csv")
     crossings_csv = os.path.join(output_dir, f"crossings_{safe_name}.csv")
@@ -129,10 +135,10 @@ def run_single_model(model: BaseModel, video_path: str, output_dir: str,
     smoother = sv.DetectionsSmoother(length=config.SMOOTHER_LENGTH)
     class_index = ClassIndex()
 
-    # Built from the first decoded frame, since an upscaler changes the frame
-    # size away from the container's reported dimensions.
-    line_zone = None
-    line_y = None
+    # Built from the first decoded frame.
+    line_zones = []  # list of sv.LineZone
+    line_y = None  # fallback horizontal line y
+    use_custom_lines = counting_lines is not None and len(counting_lines) > 0
 
     frame_rows = []
     tracks: dict[int, TrackRecord] = defaultdict(TrackRecord)
@@ -159,16 +165,26 @@ def run_single_model(model: BaseModel, video_path: str, output_dir: str,
         if not ret:
             break
 
-        if upscaler is not None:
-            frame = upscaler.upscale(frame)
-
-        if line_zone is None:
+        if not line_zones:
             height, width = frame.shape[:2]
-            line_y = int(height * config.LINE_POSITION)
-            line_zone = sv.LineZone(
-                start=sv.Point(x=0, y=line_y),
-                end=sv.Point(x=width, y=line_y),
-            )
+            if use_custom_lines:
+                # Create LineZone objects from user-drawn lines
+                for (start_pt, end_pt) in counting_lines:
+                    line_zones.append(sv.LineZone(
+                        start=sv.Point(x=start_pt[0], y=start_pt[1]),
+                        end=sv.Point(x=end_pt[0], y=end_pt[1]),
+                        triggering_anchors=(sv.Position.CENTER,),
+                        minimum_crossing_threshold=0,
+                    ))
+            else:
+                # Fallback: default horizontal line
+                line_y = int(height * config.LINE_POSITION)
+                line_zones = [sv.LineZone(
+                    start=sv.Point(x=0, y=line_y),
+                    end=sv.Point(x=width, y=line_y),
+                    triggering_anchors=(sv.Position.CENTER,),
+                    minimum_crossing_threshold=0,
+                )]
 
         detections = model.detect(frame)
         tracked: list[TrackedDetection] = []
@@ -177,8 +193,6 @@ def run_single_model(model: BaseModel, video_path: str, output_dir: str,
             sv_detections = sv.Detections(
                 xyxy=np.array([d.bbox for d in detections], dtype=np.float32),
                 confidence=np.array([d.confidence for d in detections], dtype=np.float32),
-                # Carrying class_id is what keeps labels attached to their own
-                # box through the tracker's filtering and reordering.
                 class_id=np.array(
                     [class_index.id_for(d.native_class) for d in detections], dtype=int
                 ),
@@ -186,7 +200,16 @@ def run_single_model(model: BaseModel, video_path: str, output_dir: str,
             sv_detections = tracker.update_with_detections(sv_detections)
             sv_detections = smoother.update_with_detections(sv_detections)
 
-            crossed_in, crossed_out = line_zone.trigger(sv_detections)
+            # Trigger all line zones and track which zone each detection crossed
+            any_crossed = np.zeros(len(sv_detections), dtype=bool)
+            detection_zone_index = np.full(len(sv_detections), -1, dtype=int)
+            for zone_idx, lz in enumerate(line_zones):
+                c_in, c_out = lz.trigger(sv_detections)
+                c_crossed = c_in | c_out
+                # If this detection crossed and hasn't been assigned a zone yet, assign it
+                newly_crossed = c_crossed & (detection_zone_index == -1)
+                detection_zone_index[newly_crossed] = zone_idx
+                any_crossed |= c_crossed
 
             for i in range(len(sv_detections)):
                 tracker_id = int(sv_detections.tracker_id[i])
@@ -197,12 +220,12 @@ def run_single_model(model: BaseModel, video_path: str, output_dir: str,
                 total_detections += 1
                 tracks[tracker_id].observe(frame_num, native_class, confidence)
 
-                if crossed_in[i] or crossed_out[i]:
+                if any_crossed[i]:
                     crossing_events.append({
                         "tracker_id": tracker_id,
                         "frame": frame_num,
                         "timestamp": round(frame_num / fps, 3),
-                        "direction": "in" if crossed_in[i] else "out",
+                        "line_zone_index": int(detection_zone_index[i]),
                     })
 
                 frame_rows.append({
@@ -227,12 +250,22 @@ def run_single_model(model: BaseModel, video_path: str, output_dir: str,
                 1 for e in crossing_events
                 if tracks[e["tracker_id"]].frames_seen >= config.MIN_TRACK_FRAMES_TO_COUNT
             )
+            # Per-road live counts
+            live_road_counts = {}
+            for zi, lz in enumerate(line_zones):
+                label = road_labels[zi] if road_labels and zi < len(road_labels) else f"Road {zi + 1}"
+                live_road_counts[label] = lz.in_count + lz.out_count
             frame_callback(
                 overlay.draw(
                     frame, tracked, line_y,
-                    line_zone.in_count, line_zone.out_count,
                     model.name, frame_num, total_frames,
                     counted=counted_so_far,
+                    counting_lines=[
+                        (lz.vector.start.x, lz.vector.start.y, lz.vector.end.x, lz.vector.end.y)
+                        for lz in line_zones
+                    ] if use_custom_lines else None,
+                    road_labels=road_labels,
+                    road_counts=live_road_counts,
                 ),
                 frame_num,
                 total_frames,
@@ -248,7 +281,8 @@ def run_single_model(model: BaseModel, video_path: str, output_dir: str,
     cap.release()
 
     result = _summarise(model, tracks, crossing_events, frame_num, fps,
-                        total_detections, elapsed, line_zone, partial)
+                        total_detections, elapsed, line_zones, partial,
+                        road_labels)
 
     with open(detections_csv, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=[
@@ -266,7 +300,8 @@ def run_single_model(model: BaseModel, video_path: str, output_dir: str,
 
 
 def _summarise(model, tracks, crossing_events, frame_num, fps,
-               total_detections, elapsed, line_zone, partial) -> dict:
+               total_detections, elapsed, line_zones, partial,
+               road_labels=None) -> dict:
     """Turn raw crossing events into counts, filtering out flicker."""
     counted, rejected = [], 0
     for event in crossing_events:
@@ -285,17 +320,26 @@ def _summarise(model, tracks, crossing_events, frame_num, fps,
 
     native_counts = Counter()
     canonical_counts = Counter()
-    canonical_in = Counter()
-    canonical_out = Counter()
     for event in counted:
         native_counts[event["vehicle_type"]] += 1
         canonical_counts[event["canonical_class"]] += 1
-        (canonical_in if event["direction"] == "in" else canonical_out)[
-            event["canonical_class"]
-        ] += 1
 
-    crossings_in = sum(1 for e in counted if e["direction"] == "in")
-    crossings_out = len(counted) - crossings_in
+    # Per-road breakdown
+    road_counts = {}
+    num_zones = len(line_zones)
+    for zi in range(num_zones):
+        label = road_labels[zi] if road_labels and zi < len(road_labels) else f"Road {zi + 1}"
+        zone_events = [e for e in counted if e.get("line_zone_index") == zi]
+        zone_native = Counter(e["vehicle_type"] for e in zone_events)
+        zone_canonical = Counter(e["canonical_class"] for e in zone_events)
+        road_counts[label] = {
+            "total": len(zone_events),
+            "by_type": dict(zone_native.most_common()),
+            "by_canonical": {
+                cls: zone_canonical[cls]
+                for cls in taxonomy.CANONICAL_CLASSES if zone_canonical[cls]
+            },
+        }
 
     return {
         "model_name": model.name,
@@ -309,29 +353,18 @@ def _summarise(model, tracks, crossing_events, frame_num, fps,
         "total_detections": total_detections,
         "detections_per_frame": round(total_detections / max(frame_num, 1), 2),
 
-        # The headline numbers: vehicles that crossed the line.
         "total_crossings": len(counted),
-        "crossings_in": crossings_in,
-        "crossings_out": crossings_out,
         "vehicle_counts": dict(native_counts.most_common()),
         "canonical_counts": {
             cls: canonical_counts[cls]
             for cls in taxonomy.CANONICAL_CLASSES if canonical_counts[cls]
         },
-        "canonical_counts_in": {
-            cls: canonical_in[cls]
-            for cls in taxonomy.CANONICAL_CLASSES if canonical_in[cls]
-        },
-        "canonical_counts_out": {
-            cls: canonical_out[cls]
-            for cls in taxonomy.CANONICAL_CLASSES if canonical_out[cls]
-        },
+
+        "road_counts": road_counts,
 
         # Diagnostics, not counts.
         "tracks_seen_anywhere": len(tracks),
         "crossings_rejected_short_track": rejected,
-        "raw_line_zone_in": line_zone.in_count if line_zone is not None else 0,
-        "raw_line_zone_out": line_zone.out_count if line_zone is not None else 0,
 
         "partial": partial,
         "_counted_events": counted,
@@ -342,7 +375,7 @@ def _write_crossings(path: str, counted_events: list[dict]):
     """One row per counted vehicle -- the file to compare against manual counts."""
     with open(path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=[
-            "tracker_id", "frame", "timestamp", "direction",
+            "tracker_id", "frame", "timestamp", "line_zone_index",
             "vehicle_type", "canonical_class", "track_frames", "mean_confidence",
         ])
         writer.writeheader()
@@ -378,7 +411,7 @@ def _write_canonical_summary(path: str, models: dict):
                            else data["canonical_counts"].get(cls, 0))
             writer.writerow(row)
 
-        for metric in ("total_crossings", "crossings_in", "crossings_out",
+        for metric in ("total_crossings",
                        "tracks_seen_anywhere", "crossings_rejected_short_track",
                        "total_detections", "processing_fps"):
             writer.writerow([metric] + [models[name][metric] for name in names])
@@ -387,8 +420,12 @@ def _write_canonical_summary(path: str, models: dict):
 def process_video_multi(video_path, output_dir, models: list[BaseModel],
                         progress_callback=None, status_callback=None,
                         frame_callback=None, stop_event=None,
-                        upscaler=None) -> dict:
-    """Run every selected model over the same video and write the comparison."""
+                        counting_lines=None) -> dict:
+    """Run every selected model over the same video and write the comparison.
+
+    counting_lines: optional list of ((sx, sy), (ex, ey)) pixel coordinate
+    tuples defining user-drawn counting lines.
+    """
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         raise ValueError(f"Cannot open video: {video_path}")
@@ -401,25 +438,27 @@ def process_video_multi(video_path, output_dir, models: list[BaseModel],
 
     taxonomy.reset_unmapped()
 
-    if upscaler is not None:
-        if status_callback:
-            status_callback("Loading upscaler...")
-        upscaler.load()
-        if status_callback:
-            status_callback("Upscaler ready")
+    has_custom_lines = counting_lines is not None and len(counting_lines) > 0
+    if has_custom_lines:
+        counting_desc = (
+            f"{len(counting_lines)} user-drawn counting line(s); "
+            f"a crossing counts only if its track was seen >= "
+            f"{config.MIN_TRACK_FRAMES_TO_COUNT} frames"
+        )
+    else:
+        counting_desc = (
+            "line crossings at y = "
+            f"{config.LINE_POSITION:.2f} x frame height; a crossing counts only if "
+            f"its track was seen >= {config.MIN_TRACK_FRAMES_TO_COUNT} frames"
+        )
 
     results = {
         "video": video_path,
         "video_name": os.path.splitext(os.path.basename(video_path))[0],
         "resolution": f"{width}x{height}",
-        "upscaled": upscaler is not None,
         "fps": fps,
         "total_frames": total_frames,
-        "counting_method": (
-            "line crossings at y = "
-            f"{config.LINE_POSITION:.2f} x frame height; a crossing counts only if "
-            f"its track was seen >= {config.MIN_TRACK_FRAMES_TO_COUNT} frames"
-        ),
+        "counting_method": counting_desc,
         "inference_size": config.INFERENCE_SIZE or "native (matches video)",
         "confidence_threshold": config.DEFAULT_CONFIDENCE,
         "canonical_taxonomy": taxonomy.CANONICAL_CLASSES,
@@ -449,7 +488,7 @@ def process_video_multi(video_path, output_dir, models: list[BaseModel],
             status_callback=status_callback,
             frame_callback=frame_callback,
             stop_event=stop_event,
-            upscaler=upscaler,
+            counting_lines=counting_lines,
         )
 
     results["unmapped_native_labels"] = taxonomy.unmapped_labels()
