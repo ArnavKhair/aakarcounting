@@ -39,6 +39,35 @@ MINIMUM_CONSECUTIVE_FRAMES = 1
 
 SMOOTHER_LENGTH = 5
 
+# Run detection on every Nth frame; 1 means every frame. Skipped frames are
+# not decoded at all (cv2 grab() without retrieve()), so the saving covers
+# both detection and decode, and speedup is close to linear.
+#
+# The cost is paid in tracking. ByteTrack associates by IoU between
+# consecutive updates, and striding multiplies apparent per-frame
+# displacement by N until boxes no longer overlap between updates.
+#
+# Measured over a fixed 1200-frame (40s) segment, YOLOv11-S at native imgsz,
+# on the current config (activation 0.25, MIN_TRACK_FRAMES_TO_COUNT 1,
+# LineZone CENTER anchor):
+#
+#   stride  crossings  speedup   2w   3w   car   bus  truck
+#        1         69    1.00x   15    8    39     2      4
+#        2         69    2.16x   15    7    40     2      4
+#        3         69    3.22x   14    8    36     4      6
+#        5         60    5.40x    9    8    36     3      3
+#
+# 2 is free: identical total and effectively identical class mix, for a 2.2x
+# speedup. 3 holds the total but shifts classification (car -3, bus +2,
+# truck +2) -- the vehicles are still counted, they are being voted into
+# different classes. 5 loses 13% of crossings and 40% of two-wheelers.
+#
+# These numbers supersede an earlier sweep taken at activation 0.5 and
+# MIN_TRACK_FRAMES_TO_COUNT 3, which showed stride 2 costing 7% and stride 5
+# costing 33%. Loosening those two settings recovered most of the striding
+# loss, so this table must be re-measured if they change again.
+DETECTION_STRIDE = 2
+
 
 # --- Counting --------------------------------------------------------------
 

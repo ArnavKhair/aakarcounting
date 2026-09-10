@@ -11,6 +11,10 @@ models/weights/
 build/
 dist/
 *.egg-info/
+
+# Local video copies and analysis tool output
+data/
+heatmap_out/
 ui-options/*/assets/sample-video.mp4
 ui-options/*/assets/clip.avi
 ui-options/*/assets/sample-frame.jpg
