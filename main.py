@@ -14,7 +14,7 @@ import webbrowser
 
 def find_free_port(default=8080):
     """Find a free port, starting with the default."""
-    for port in [default] + range(default + 1, default + 100):
+    for port in [default] + list(range(default + 1, default + 100)):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             if s.connect_ex(("localhost", port)) != 0:
                 return port

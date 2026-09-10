@@ -47,29 +47,25 @@ SMOOTHER_LENGTH = 5
 # consecutive updates, and striding multiplies apparent per-frame
 # displacement by N until boxes no longer overlap between updates.
 #
-# Measured over a fixed 1200-frame (40s) segment, YOLOv11-S, native imgsz:
+# Measured over a fixed 1200-frame (40s) segment, YOLOv11-S at native imgsz,
+# on the current config (activation 0.25, MIN_TRACK_FRAMES_TO_COUNT 1,
+# LineZone CENTER anchor):
 #
-#   stride  crossings   speedup   two_wheeler   car
-#        1         55     1.00x            15    33
-#        2         51     2.07x            13    32
-#        3         49     3.03x            12    32
-#        5         37     5.09x             6    29
+#   stride  crossings  speedup   2w   3w   car   bus  truck
+#        1         69    1.00x   15    8    39     2      4
+#        2         69    2.16x   15    7    40     2      4
+#        3         69    3.22x   14    8    36     4      6
+#        5         60    5.40x    9    8    36     3      3
 #
-# The loss is a BIAS, not uniform shrinkage: at stride 5 two-wheelers drop
-# 60% while cars drop 12%, so the class mix itself is distorted. Small fast
-# vehicles are exactly what this footage already under-counts.
+# 2 is free: identical total and effectively identical class mix, for a 2.2x
+# speedup. 3 holds the total but shifts classification (car -3, bus +2,
+# truck +2) -- the vehicles are still counted, they are being voted into
+# different classes. 5 loses 13% of crossings and 40% of two-wheelers.
 #
-# Not fixable via MIN_TRACK_FRAMES_TO_COUNT -- at stride 5 the shortest
-# counted track was still 18 processed frames, so nothing was rejected as
-# short. The vehicles are lost to association failure, not the filter.
-#
-# 2 is close to free. 3 is a reasonable trade. 5 is not recommended.
-#
-# CAVEAT: measured with TRACK_ACTIVATION_THRESHOLD=0.5 and
-# MIN_TRACK_FRAMES_TO_COUNT=3, before both were loosened to 0.25 and 1, and
-# before LineZone moved to a CENTER anchor. Those changes should recover some
-# of the striding loss, so re-measure before trusting the exact figures. The
-# direction and the class bias are expected to hold.
+# These numbers supersede an earlier sweep taken at activation 0.5 and
+# MIN_TRACK_FRAMES_TO_COUNT 3, which showed stride 2 costing 7% and stride 5
+# costing 33%. Loosening those two settings recovered most of the striding
+# loss, so this table must be re-measured if they change again.
 DETECTION_STRIDE = 2
 
 
