@@ -138,6 +138,7 @@ def run_single_model(model: BaseModel, video_path: str, output_dir: str,
     frame_rows = []
     tracks: dict[int, TrackRecord] = defaultdict(TrackRecord)
     crossing_events = []   # one entry per line crossing, class resolved at the end
+    counted_crossings: set[tuple[int, int]] = set()  # (tracker_id, line_zone_index) — dedup
     total_detections = 0
 
     start_time = time.time()
@@ -209,12 +210,15 @@ def run_single_model(model: BaseModel, video_path: str, output_dir: str,
                 tracks[tracker_id].observe(frame_num, native_class, confidence)
 
                 if any_crossed[i]:
-                    crossing_events.append({
-                        "tracker_id": tracker_id,
-                        "frame": frame_num,
-                        "timestamp": round(frame_num / fps, 3),
-                        "line_zone_index": int(detection_zone_index[i]),
-                    })
+                    dedup_key = (tracker_id, int(detection_zone_index[i]))
+                    if dedup_key not in counted_crossings:
+                        counted_crossings.add(dedup_key)
+                        crossing_events.append({
+                            "tracker_id": tracker_id,
+                            "frame": frame_num,
+                            "timestamp": round(frame_num / fps, 3),
+                            "line_zone_index": int(detection_zone_index[i]),
+                        })
 
                 frame_rows.append({
                     "frame": frame_num,
@@ -295,6 +299,9 @@ def _summarise(model, tracks, crossing_events, frame_num, fps,
     for event in crossing_events:
         record = tracks[event["tracker_id"]]
         if record.frames_seen < config.MIN_TRACK_FRAMES_TO_COUNT:
+            rejected += 1
+            continue
+        if record.mean_confidence < config.MIN_MEAN_CONFIDENCE_TO_COUNT:
             rejected += 1
             continue
         native_class = record.voted_class

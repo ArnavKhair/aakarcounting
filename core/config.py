@@ -46,7 +46,14 @@ SMOOTHER_LENGTH = 5
 # frames over its whole life. This replaces MINIMUM_CONSECUTIVE_FRAMES as the
 # false-positive filter: it rejects flicker without ever making a real vehicle
 # invisible to the tracker.
-MIN_TRACK_FRAMES_TO_COUNT = 1
+MIN_TRACK_FRAMES_TO_COUNT = 3
+
+# A counted crossing must have a mean confidence above this threshold across
+# its entire track life.  Fragmented tracks from ID churn (vehicle gets
+# occluded, tracker loses it, re-detects with a new ID) tend to have lower
+# average confidence than unbroken tracks.  On the ground-truth video, 0.60
+# reduced 616 raw crossings to 461 -- within 4 of the manual count of 465.
+MIN_MEAN_CONFIDENCE_TO_COUNT = 0.60
 
 # Counting line height as a fraction of frame height.
 #
