@@ -78,6 +78,11 @@ LINE_POSITION = 0.35
 
 PREVIEW_EVERY_N_FRAMES = 2
 
+# How often (in frames) to write a checkpoint to disk for crash recovery.
+# Checkpoints store crossing events, tracks, and frame number so processing
+# can resume from the last saved point if interrupted.
+CHECKPOINT_INTERVAL = 10_000
+
 
 def round_to_stride(value: int, stride: int = STRIDE) -> int:
     """Round up to the next multiple of the detector stride."""

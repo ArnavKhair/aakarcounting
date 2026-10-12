@@ -41,6 +41,28 @@ function showError(msg) {
   setTimeout(() => errorBanner.classList.remove('visible'), 8000);
 }
 
+function showQuicksavedToast(frame, total) {
+  let toast = document.getElementById('quicksaved-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'quicksaved-toast';
+    toast.className = 'quicksaved-toast';
+    toast.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+        <polyline points="22 4 12 14.01 9 11.01"/>
+      </svg>
+      <span>Quicksaved at ${frame.toLocaleString()} / ${total.toLocaleString()} frames</span>
+    `;
+    document.body.appendChild(toast);
+  }
+  toast.classList.add('visible');
+  clearTimeout(toast._hideTimer);
+  toast._hideTimer = setTimeout(() => {
+    toast.classList.remove('visible');
+  }, 3000);
+}
+
 const { videoId } = getUrlParams();
 console.log('[Processing] video_id:', videoId);
 
@@ -57,11 +79,20 @@ if (!videoId) {
   ws.on('_open', () => {
     console.log('[Processing] WS connected, sending start_processing');
     const annotations = JSON.parse(sessionStorage.getItem('annotations') || '[]');
+    const videoMeta = JSON.parse(sessionStorage.getItem('video_meta') || '{}');
     console.log('[Processing] Annotations:', annotations);
-    ws.send('start_processing', {
+
+    const message = {
       video_id: videoId,
       annotations: annotations,
-    });
+    };
+
+    // If resuming from checkpoint, pass the frame number
+    if (videoMeta.resume_frame) {
+      message.resume_frame = videoMeta.resume_frame;
+    }
+
+    ws.send('start_processing', message);
   });
 
   ws.on('status', (data) => {
@@ -82,6 +113,11 @@ if (!videoId) {
     frameDisplay.src = `data:image/jpeg;base64,${data}`;
     frameDisplay.classList.add('visible');
     framePlaceholder.classList.add('hidden');
+  });
+
+  ws.on('quicksaved', (data) => {
+    console.log('[Processing] Checkpoint saved:', data);
+    showQuicksavedToast(data.frame, data.total);
   });
 
   ws.on('result', (data) => {

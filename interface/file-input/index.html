@@ -32,6 +32,7 @@
 
       <h2 class="upload-card__heading">Select a video file</h2>
       <p class="upload-card__formats">MP4, AVI, MOV, MKV, WebM</p>
+      <p class="upload-card__recommendation">Recommended: up to 2 GB / ~1 hour. Larger files work but take longer.</p>
 
       <input type="file" id="file-input" accept="video/*,.mp4,.avi,.mov,.mkv,.webm" hidden>
 
@@ -47,6 +48,16 @@
       <div class="upload-card__info" id="upload-info" style="display: none;">
         <div class="upload-card__filename" id="info-filename"></div>
         <div class="upload-card__meta" id="info-meta"></div>
+        <div class="upload-card__estimate" id="info-estimate"></div>
+      </div>
+
+      <div class="upload-card__warning" id="upload-warning" style="display: none;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/>
+          <line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+        <span id="warning-text"></span>
       </div>
 
       <div class="upload-card__continue" id="btn-continue" style="display: none;">
@@ -66,6 +77,24 @@
     </div>
 
     <div class="error-banner" id="error-banner"></div>
+
+    <div class="resume-dialog" id="resume-dialog" style="display: none;">
+      <div class="resume-dialog__backdrop"></div>
+      <div class="resume-dialog__content">
+        <div class="resume-dialog__icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
+          </svg>
+        </div>
+        <h3 class="resume-dialog__title">Resume Previous Session?</h3>
+        <p class="resume-dialog__message" id="resume-message">A previous processing session was interrupted. Resume from where it left off?</p>
+        <div class="resume-dialog__actions">
+          <button class="btn btn--secondary" id="btn-start-fresh">Start Fresh</button>
+          <button class="btn btn--primary" id="btn-resume">Resume</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script type="module" src="js/app.js"></script>

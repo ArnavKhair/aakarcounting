@@ -124,6 +124,21 @@ async def get_results(video_id: str):
         return JSONResponse(json.load(f))
 
 
+@app.get("/api/checkpoint/{video_id}")
+async def check_checkpoint(video_id: str):
+    """Check if a checkpoint exists for this video and return its frame number."""
+    from core.processor import load_checkpoint
+    output_dir = OUTPUT_DIR / video_id
+    checkpoint = load_checkpoint(str(output_dir))
+    if checkpoint is None:
+        return {"exists": False}
+    return {
+        "exists": True,
+        "frame_num": checkpoint["frame_num"],
+        "total_frames": checkpoint.get("total_frames", 0),
+    }
+
+
 @app.get("/api/download/{video_id}/{filename}")
 async def download_file(video_id: str, filename: str):
     """Download a CSV or JSON file from the output directory."""
@@ -202,6 +217,7 @@ async def websocket_endpoint(websocket: WebSocket):
             if msg_type == "start_processing":
                 video_id = data.get("video_id")
                 annotations = data.get("annotations", [])
+                resume_frame = data.get("resume_frame")
                 current_video_id = video_id
 
                 if not video_id or video_id not in video_store:
@@ -209,14 +225,14 @@ async def websocket_endpoint(websocket: WebSocket):
                     await _ws_send(websocket, "error", {"message": "Invalid video ID"})
                     continue
 
-                print(f"[WS] Starting processing for {video_id}, {len(annotations)} annotations")
+                print(f"[WS] Starting processing for {video_id}, {len(annotations)} annotations, resume_frame={resume_frame}")
                 stop_event.clear()
                 active_sessions[video_id] = stop_event
 
                 # Run processing in background thread
                 thread = threading.Thread(
                     target=_run_processing,
-                    args=(websocket, loop, video_id, annotations, stop_event),
+                    args=(websocket, loop, video_id, annotations, stop_event, resume_frame),
                     daemon=True,
                 )
                 thread.start()
@@ -267,6 +283,7 @@ def _run_processing(
     video_id: str,
     annotations: list,
     stop_event: threading.Event,
+    resume_frame: int = None,
 ):
     """Run the processing pipeline in a background thread."""
     try:
@@ -332,6 +349,13 @@ def _run_processing(
         _ws_send_sync(websocket, loop, "status", {"text": "Processing..."})
         print("[Processing] Starting run_single_model()...")
 
+        def on_checkpoint(frame_num, total_frames):
+            print(f"[Processing] Checkpoint saved at frame {frame_num}/{total_frames}")
+            _ws_send_sync(websocket, loop, "quicksaved", {
+                "frame": frame_num,
+                "total": total_frames,
+            })
+
         single_result = run_single_model(
             model, video_path, str(output_dir),
             progress_callback=on_progress,
@@ -340,6 +364,8 @@ def _run_processing(
             stop_event=stop_event,
             counting_lines=counting_lines if counting_lines else None,
             road_labels=road_labels if road_labels else None,
+            checkpoint_callback=on_checkpoint,
+            resume_frame=resume_frame,
         )
 
         if stop_event.is_set():

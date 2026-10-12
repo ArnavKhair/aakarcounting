@@ -117,6 +117,47 @@
   justify-content: center;
 }
 
+/* ── Preview note ─────────────────────────────────────────────────── */
+.sidebar__preview-note {
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  text-align: center;
+  border-top: 1px solid var(--color-border-light);
+}
+
+/* ── Quicksaved toast ─────────────────────────────────────────────── */
+.quicksaved-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  z-index: 9999;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity var(--transition-normal), transform var(--transition-normal);
+  pointer-events: none;
+}
+
+.quicksaved-toast.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.quicksaved-toast svg {
+  color: var(--color-accent);
+  flex-shrink: 0;
+}
+
 /* ── Workspace frame display ──────────────────────────────────────── */
 .frame-container {
   width: 100%;

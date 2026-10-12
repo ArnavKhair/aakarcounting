@@ -98,16 +98,78 @@ def _safe_filename(name: str) -> str:
     ).strip("_")
 
 
+def _save_checkpoint(output_dir: str, frame_num: int, crossing_events: list,
+                     counted_crossings: set, tracks: dict, total_detections: int):
+    """Write processing state to checkpoint.json for crash recovery."""
+    checkpoint_path = os.path.join(output_dir, "checkpoint.json")
+    data = {
+        "frame_num": frame_num,
+        "crossing_events": crossing_events,
+        "counted_crossings": list(counted_crossings),
+        "tracks": {
+            str(tid): {
+                "frames_seen": rec.frames_seen,
+                "class_votes": dict(rec.class_votes),
+                "confidence_sum": rec.confidence_sum,
+                "first_frame": rec.first_frame,
+                "last_frame": rec.last_frame,
+            }
+            for tid, rec in tracks.items()
+        },
+        "total_detections": total_detections,
+    }
+    with open(checkpoint_path, "w") as f:
+        json.dump(data, f)
+
+
+def _load_checkpoint(output_dir: str) -> dict | None:
+    """Load checkpoint state from disk. Returns None if no checkpoint exists."""
+    checkpoint_path = os.path.join(output_dir, "checkpoint.json")
+    if not os.path.exists(checkpoint_path):
+        return None
+    with open(checkpoint_path) as f:
+        data = json.load(f)
+    # Reconstruct TrackRecord objects
+    tracks = {}
+    for tid_str, rec_data in data.get("tracks", {}).items():
+        rec = TrackRecord(
+            frames_seen=rec_data["frames_seen"],
+            confidence_sum=rec_data["confidence_sum"],
+            first_frame=rec_data.get("first_frame"),
+            last_frame=rec_data.get("last_frame"),
+        )
+        rec.class_votes = Counter(rec_data.get("class_votes", {}))
+        tracks[int(tid_str)] = rec
+    data["tracks"] = tracks
+    data["counted_crossings"] = set(tuple(c) for c in data.get("counted_crossings", []))
+    return data
+
+
+def load_checkpoint(output_dir: str) -> dict | None:
+    """Public interface: check if a checkpoint exists and return its frame number."""
+    return _load_checkpoint(output_dir)
+
+
+def delete_checkpoint(output_dir: str):
+    """Remove checkpoint file after successful completion."""
+    checkpoint_path = os.path.join(output_dir, "checkpoint.json")
+    if os.path.exists(checkpoint_path):
+        os.remove(checkpoint_path)
+
+
 def run_single_model(model: BaseModel, video_path: str, output_dir: str,
                      progress_callback=None, status_callback=None,
                      frame_callback=None, stop_event=None,
-                     counting_lines=None, road_labels=None) -> dict:
+                     counting_lines=None, road_labels=None,
+                     checkpoint_callback=None, resume_frame=None) -> dict:
     """Run one model over the whole video, counting line crossings.
 
     counting_lines: optional list of ((sx, sy), (ex, ey)) pixel coordinate
     tuples defining user-drawn counting lines. When provided, these replace
     the default horizontal line at config.LINE_POSITION.
     road_labels: optional list of road name strings, one per counting line.
+    checkpoint_callback: optional fn(frame_num, total_frames) called after checkpoint save.
+    resume_frame: if provided, resume processing from this frame number.
     """
     safe_name = _safe_filename(model.name)
     detections_csv = os.path.join(output_dir, f"vehicle_counts_{safe_name}.csv")
@@ -140,14 +202,29 @@ def run_single_model(model: BaseModel, video_path: str, output_dir: str,
     crossing_events = []   # one entry per line crossing, class resolved at the end
     counted_crossings: set[tuple[int, int]] = set()  # (tracker_id, line_zone_index) — dedup
     total_detections = 0
+    frame_num = 0
+
+    # Resume from checkpoint if provided
+    if resume_frame is not None and resume_frame > 0:
+        checkpoint = _load_checkpoint(output_dir)
+        if checkpoint:
+            crossing_events = checkpoint["crossing_events"]
+            counted_crossings = checkpoint["counted_crossings"]
+            tracks = defaultdict(TrackRecord, checkpoint["tracks"])
+            total_detections = checkpoint["total_detections"]
+            frame_num = checkpoint["frame_num"]
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
+            if status_callback:
+                status_callback(f"[{model.name}] Resumed from frame {frame_num}")
 
     start_time = time.time()
-    frame_num = 0
     partial = False
 
     while True:
         if stop_event and stop_event.is_set():
             partial = True
+            _save_checkpoint(output_dir, frame_num, crossing_events,
+                           counted_crossings, tracks, total_detections)
             break
 
         ret, frame = cap.read()
@@ -269,8 +346,18 @@ def run_single_model(model: BaseModel, video_path: str, output_dir: str,
         if status_callback and frame_num % 30 == 0:
             status_callback(f"[{model.name}] Frame {frame_num}/{total_frames}")
 
+        # Periodic checkpoint save
+        if config.CHECKPOINT_INTERVAL > 0 and frame_num % config.CHECKPOINT_INTERVAL == 0:
+            _save_checkpoint(output_dir, frame_num, crossing_events,
+                           counted_crossings, tracks, total_detections)
+            if checkpoint_callback:
+                checkpoint_callback(frame_num, total_frames)
+
     elapsed = time.time() - start_time
     cap.release()
+
+    # Delete checkpoint on successful completion
+    delete_checkpoint(output_dir)
 
     result = _summarise(model, tracks, crossing_events, frame_num, fps,
                         total_detections, elapsed, line_zones, partial,
