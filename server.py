@@ -11,6 +11,7 @@ import asyncio
 import base64
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -27,14 +28,37 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from core.media import create_preview, is_browser_playable, probe_video
+
 # ── Paths ──────────────────────────────────────────────────────────────────
 
 PROJECT_ROOT = Path(__file__).parent
 INTERFACE_DIR = PROJECT_ROOT / "interface"
 OUTPUT_DIR = PROJECT_ROOT / "outputs"
+CHANGELOG_DIR = PROJECT_ROOT / "changelog"
 
 # Temp directory for uploaded videos
 UPLOAD_DIR = Path(tempfile.mkdtemp(prefix="vcai_uploads_"))
+
+_SEMVER_HEADING = re.compile(
+    r"^\s{0,3}#{1,6}\s+.*?\bv?(\d+)\.(\d+)\.(\d+)\b",
+    re.MULTILINE,
+)
+
+
+def get_latest_version() -> Optional[str]:
+    """Return the highest semver found in changelog headings, e.g. 'v1.2.1'."""
+    latest = None
+    for path in CHANGELOG_DIR.glob("*.md"):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for match in _SEMVER_HEADING.finditer(text):
+            version = tuple(int(part) for part in match.groups())
+            if latest is None or version > latest:
+                latest = version
+    return "v" + ".".join(map(str, latest)) if latest else None
 
 # ── App state ──────────────────────────────────────────────────────────────
 
@@ -59,6 +83,12 @@ active_sessions: dict[str, threading.Event] = {}
 @app.get("/")
 async def root():
     return RedirectResponse(url="/file-input/")
+
+
+@app.get("/api/version")
+async def get_version():
+    """Return the latest version parsed from the changelog."""
+    return {"version": get_latest_version()}
 
 
 @app.post("/upload")
@@ -87,12 +117,32 @@ async def upload_video(file: UploadFile = File(...)):
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     cap.release()
 
+    try:
+        fmt, video_codec, audio_codec = probe_video(dest)
+    except Exception as exc:
+        os.remove(dest)
+        raise HTTPException(400, f"Could not read video metadata: {exc}")
+
+    if not video_codec:
+        os.remove(dest)
+        raise HTTPException(400, "No video stream found")
+
+    preview_path = dest
+    if ext != ".mp4" or not is_browser_playable(fmt, video_codec, audio_codec):
+        preview_path = dest.with_name(f"{dest.stem}_preview.mp4")
+        try:
+            await asyncio.to_thread(create_preview, dest, preview_path, video_codec)
+        except Exception as exc:
+            os.remove(dest)
+            raise HTTPException(400, f"Could not prepare video for preview: {exc}")
+
     duration = frame_count / fps if fps > 0 else 0
 
     meta = {
         "video_id": video_id,
         "filename": file.filename,
         "path": str(dest),
+        "preview_path": str(preview_path),
         "width": width,
         "height": height,
         "fps": round(fps, 2),
@@ -110,7 +160,9 @@ async def get_video(video_id: str):
     meta = video_store.get(video_id)
     if not meta:
         raise HTTPException(404, "Video not found")
-    return FileResponse(meta["path"], media_type="video/mp4")
+    video_path = Path(meta.get("preview_path") or meta["path"])
+    media_type = "video/webm" if video_path.suffix.lower() == ".webm" else "video/mp4"
+    return FileResponse(str(video_path), media_type=media_type)
 
 
 @app.get("/api/results/{video_id}")

@@ -15,6 +15,7 @@ const resumeDialog = document.getElementById('resume-dialog');
 const resumeMessage = document.getElementById('resume-message');
 const btnResume = document.getElementById('btn-resume');
 const btnStartFresh = document.getElementById('btn-start-fresh');
+const versionEl = document.getElementById('version');
 
 const PROCESSING_FPS = 10;
 const RECOMMENDED_SIZE_BYTES = 2 * 1024 * 1024 * 1024;
@@ -28,6 +29,19 @@ function showError(msg) {
   errorBanner.classList.add('visible');
   setTimeout(() => errorBanner.classList.remove('visible'), 8000);
 }
+
+async function loadVersion() {
+  try {
+    const resp = await fetch('/api/version');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (data.version) versionEl.textContent = data.version;
+  } catch (e) {
+    console.warn('Failed to load version:', e);
+  }
+}
+
+loadVersion();
 
 function formatSize(bytes) {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -129,11 +143,20 @@ btnContinue.addEventListener('click', async () => {
         }
       });
 
+      xhr.upload.addEventListener('load', () => {
+        progressFill.style.width = '100%';
+        progressText.textContent = 'Preparing video for preview...';
+      });
+
       xhr.onload = () => {
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve(JSON.parse(xhr.responseText));
         } else {
-          reject(new Error(xhr.responseText || 'Upload failed'));
+          let message = xhr.responseText || 'Upload failed';
+          try {
+            message = JSON.parse(xhr.responseText).detail || message;
+          } catch (e) {}
+          reject(new Error(message));
         }
       };
       xhr.onerror = () => reject(new Error('Network error'));

@@ -252,3 +252,15 @@
   color: var(--color-text-secondary);
   text-align: center;
 }
+
+/* Version */
+.upload-card__version {
+  margin-top: var(--space-6);
+  font-size: var(--font-size-base);
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+.upload-card__version:empty {
+  display: none;
+}
