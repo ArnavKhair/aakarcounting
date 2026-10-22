@@ -29,6 +29,7 @@ from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from core.media import create_preview, is_browser_playable, probe_video
+from core.processor import load_checkpoint
 
 # ── Paths ──────────────────────────────────────────────────────────────────
 
@@ -74,8 +75,36 @@ app.add_middleware(
 # In-memory store: video_id -> metadata
 video_store: dict[str, dict] = {}
 
-# Active processing sessions: video_id -> threading.Event (stop signal)
-active_sessions: dict[str, threading.Event] = {}
+
+class Session:
+    """The state of one processing run.
+
+    stop/pause/resume are separate because stopping and pausing mean
+    different things to the user: a stop ends the run, a pause holds it
+    where it is and lets it carry on from the same frame.
+    """
+
+    def __init__(self):
+        self.stop_event = threading.Event()
+        self.pause_event = threading.Event()
+        self.resume_event = threading.Event()
+        self.thread: threading.Thread | None = None
+
+    def stop(self):
+        self.stop_event.set()
+        # A run that is paused waits on resume_event, so a stop has to wake
+        # it up as well or the thread sits there until the client reconnects.
+        self.resume_event.set()
+
+    def pause(self):
+        self.pause_event.set()
+
+    def resume(self):
+        self.resume_event.set()
+
+
+# Active processing sessions: video_id -> Session
+active_sessions: dict[str, Session] = {}
 
 
 # ── REST endpoints ─────────────────────────────────────────────────────────
@@ -277,8 +306,7 @@ async def serve_screen_static(screen: str, path: str):
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     print("[WS] Client connected")
-    current_video_id = None
-    stop_event = threading.Event()
+    current_session: Session | None = None
     loop = asyncio.get_event_loop()
 
     try:
@@ -293,36 +321,69 @@ async def websocket_endpoint(websocket: WebSocket):
                 video_id = data.get("video_id")
                 annotations = data.get("annotations", [])
                 resume_frame = data.get("resume_frame")
-                current_video_id = video_id
 
                 if not video_id or video_id not in video_store:
                     print(f"[WS] Error: Invalid video ID '{video_id}'")
                     await _ws_send(websocket, "error", {"message": "Invalid video ID"})
                     continue
 
-                print(f"[WS] Starting processing for {video_id}, {len(annotations)} annotations, resume_frame={resume_frame}")
-                stop_event.clear()
-                active_sessions[video_id] = stop_event
+                # A run for this video may still be going -- the client
+                # reconnects automatically, and a reconnect re-sends this
+                # message. Stop the old run and wait for it to clear out
+                # before starting another, or two threads would process the
+                # same video and race to write the same checkpoint, with the
+                # dying one writing a checkpoint from further along the
+                # video than the live one.
+                previous = active_sessions.get(video_id)
+                if previous is not None and previous.thread is not None \
+                        and previous.thread.is_alive():
+                    print(f"[WS] Stopping the previous run for {video_id} first")
+                    previous.stop()
+                    previous.thread.join(timeout=60)
+
+                # With no explicit frame, pick up from the checkpoint if there
+                # is one. That is what makes a reconnect pick up where the
+                # interrupted run left off instead of starting over.
+                if not resume_frame:
+                    existing = load_checkpoint(str(OUTPUT_DIR / video_id))
+                    if existing:
+                        resume_frame = existing["frame_num"]
+
+                print(f"[WS] Starting processing for {video_id}, "
+                      f"{len(annotations)} annotations, resume_frame={resume_frame}")
+
+                session = Session()
+                active_sessions[video_id] = session
+                current_session = session
 
                 # Run processing in background thread
                 thread = threading.Thread(
                     target=_run_processing,
-                    args=(websocket, loop, video_id, annotations, stop_event, resume_frame),
+                    args=(websocket, loop, video_id, annotations, session, resume_frame),
                     daemon=True,
                 )
+                session.thread = thread
                 thread.start()
+
+            elif msg_type == "pause_processing":
+                print("[WS] Pause requested")
+                if current_session is not None:
+                    current_session.pause()
+
+            elif msg_type == "resume_processing":
+                print("[WS] Resume requested")
+                if current_session is not None:
+                    current_session.resume()
 
             elif msg_type == "stop_processing":
                 print("[WS] Stop requested")
-                stop_event.set()
-                if current_video_id:
-                    active_sessions.pop(current_video_id, None)
+                if current_session is not None:
+                    current_session.stop()
 
     except WebSocketDisconnect:
         print("[WS] Client disconnected")
-        stop_event.set()
-        if current_video_id:
-            active_sessions.pop(current_video_id, None)
+        if current_session is not None:
+            current_session.stop()
     except Exception as e:
         print(f"[WS] Error: {e}")
         try:
@@ -357,10 +418,11 @@ def _run_processing(
     loop: asyncio.AbstractEventLoop,
     video_id: str,
     annotations: list,
-    stop_event: threading.Event,
+    session: Session,
     resume_frame: int = None,
 ):
     """Run the processing pipeline in a background thread."""
+    stop_event = session.stop_event
     try:
         meta = video_store[video_id]
         video_path = meta["path"]
@@ -431,6 +493,20 @@ def _run_processing(
                 "total": total_frames,
             })
 
+        def on_pause(frame_num, total_frames):
+            print(f"[Processing] Paused at frame {frame_num}/{total_frames}")
+            _ws_send_sync(websocket, loop, "paused", {
+                "frame": frame_num,
+                "total": total_frames,
+            })
+
+        def on_resume(frame_num, total_frames):
+            print(f"[Processing] Resumed at frame {frame_num}/{total_frames}")
+            _ws_send_sync(websocket, loop, "resumed", {
+                "frame": frame_num,
+                "total": total_frames,
+            })
+
         single_result = run_single_model(
             model, video_path, str(output_dir),
             progress_callback=on_progress,
@@ -441,6 +517,10 @@ def _run_processing(
             road_labels=road_labels if road_labels else None,
             checkpoint_callback=on_checkpoint,
             resume_frame=resume_frame,
+            pause_event=session.pause_event,
+            resume_event=session.resume_event,
+            pause_callback=on_pause,
+            resume_callback=on_resume,
         )
 
         if stop_event.is_set():
@@ -487,7 +567,11 @@ def _run_processing(
         traceback.print_exc()
         _ws_send_sync(websocket, loop, "error", {"message": str(e)})
     finally:
-        active_sessions.pop(video_id, None)
+        # Only clear the entry if it is still this session. A reconnect
+        # replaces it with a new one, and clearing that would leave the
+        # live run untracked.
+        if active_sessions.get(video_id) is session:
+            active_sessions.pop(video_id, None)
 
 
 def _convert_annotations(annotations: list, video_width: int, video_height: int) -> tuple:

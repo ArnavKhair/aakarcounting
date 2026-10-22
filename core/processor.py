@@ -336,7 +336,9 @@ def run_single_model(model: BaseModel, video_path: str, output_dir: str,
                      progress_callback=None, status_callback=None,
                      frame_callback=None, stop_event=None,
                      counting_lines=None, road_labels=None,
-                     checkpoint_callback=None, resume_frame=None) -> dict:
+                     checkpoint_callback=None, resume_frame=None,
+                     pause_event=None, resume_event=None,
+                     pause_callback=None, resume_callback=None) -> dict:
     """Run one model over the whole video, counting line crossings.
 
     counting_lines: optional list of ((sx, sy), (ex, ey)) pixel coordinate
@@ -345,6 +347,11 @@ def run_single_model(model: BaseModel, video_path: str, output_dir: str,
     road_labels: optional list of road name strings, one per counting line.
     checkpoint_callback: optional fn(frame_num, total_frames) called after checkpoint save.
     resume_frame: if provided, resume processing from this frame number.
+    pause_event: set to ask the run to pause. The run holds its position,
+        writes a checkpoint, and waits.
+    resume_event: set to let a paused run carry on.
+    pause_callback: optional fn(frame_num, total_frames) called when the run pauses.
+    resume_callback: optional fn(frame_num, total_frames) called when the run resumes.
     """
     safe_name = _safe_filename(model.name)
     os.makedirs(output_dir, exist_ok=True)
@@ -428,6 +435,39 @@ def run_single_model(model: BaseModel, video_path: str, output_dir: str,
                            counted_crossings, tracks, total_detections,
                            total_frames=total_frames, fingerprint=fingerprint)
             break
+
+        if pause_event is not None and pause_event.is_set():
+            # Hold the position rather than tearing the run down: the model
+            # stays loaded and the video stays open, so resuming is instant
+            # and costs nothing to set up. The checkpoint written here is
+            # what a later resume from the upload screen would pick up.
+            _save_checkpoint(output_dir, frame_num, crossing_events,
+                           counted_crossings, tracks, total_detections,
+                           total_frames=total_frames, fingerprint=fingerprint)
+            if checkpoint_callback:
+                checkpoint_callback(frame_num, total_frames)
+            if pause_callback:
+                pause_callback(frame_num, total_frames)
+            if status_callback:
+                status_callback(f"[{model.name}] Paused at frame {frame_num}")
+
+            while True:
+                if resume_event is not None and resume_event.wait(0.2):
+                    break
+                if stop_event is not None and stop_event.is_set():
+                    break
+            if resume_event is not None:
+                resume_event.clear()
+            if pause_event is not None:
+                pause_event.clear()
+
+            if stop_event is not None and stop_event.is_set():
+                partial = True
+                break
+            if resume_callback:
+                resume_callback(frame_num, total_frames)
+            if status_callback:
+                status_callback(f"[{model.name}] Resumed at frame {frame_num}")
 
         ret, frame = cap.read()
         if not ret:

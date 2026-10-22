@@ -45,10 +45,17 @@
         </div>
 
         <div class="sidebar__actions">
-          <button class="btn btn--danger btn--sm" id="btn-stop">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <button class="btn btn--secondary btn--sm" id="btn-pause">
+            <svg id="btn-pause-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect x="6" y="4" width="4" height="16"/>
               <rect x="14" y="4" width="4" height="16"/>
+            </svg>
+            <span id="btn-pause-label">Pause Processing</span>
+          </button>
+          <button class="btn btn--danger btn--sm" id="btn-stop">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="8" y1="12" x2="16" y2="12"/>
             </svg>
             Stop Processing
           </button>

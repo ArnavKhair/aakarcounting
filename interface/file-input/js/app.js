@@ -175,7 +175,16 @@ btnContinue.addEventListener('click', async () => {
     const checkpoint = await checkForCheckpoint(result.video_id);
     if (checkpoint.exists) {
       const estFrame = checkpoint.frame_num.toLocaleString();
-      resumeMessage.textContent = `A previous processing session was interrupted at frame ${estFrame}. Resume from where it left off?`;
+      if (checkpoint.resumable === false && checkpoint.reason) {
+        // The checkpoint is there but it belongs to a different video or a
+        // different setup, so it cannot be picked up. Say so rather than
+        // offering a resume that would fail.
+        resumeMessage.textContent = `A previous run for this video was interrupted at frame ${estFrame}, but it cannot be resumed (${checkpoint.reason}).`;
+        btnResume.style.display = 'none';
+      } else {
+        resumeMessage.textContent = `A previous processing session was interrupted at frame ${estFrame}. Resume from where it left off?`;
+        btnResume.style.display = '';
+      }
       resumeDialog.style.display = '';
     } else {
       setTimeout(() => {
@@ -202,7 +211,13 @@ btnResume.addEventListener('click', () => {
 
 btnStartFresh.addEventListener('click', async () => {
   if (!uploadedVideoId) return;
-  // Delete checkpoint by calling a fresh start (server will handle it)
+  // The checkpoint has to actually go, or the next run would pick it up and
+  // resume instead of starting over.
+  try {
+    await fetch(`/api/checkpoint/${uploadedVideoId}`, { method: 'DELETE' });
+  } catch (e) {
+    console.warn('Failed to clear the checkpoint:', e);
+  }
   const meta = JSON.parse(sessionStorage.getItem('video_meta') || '{}');
   const filename = meta.filename || 'video.mp4';
   navigateToAnnotation(uploadedVideoId, filename);
