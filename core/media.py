@@ -49,6 +49,13 @@ def is_browser_playable(fmt: str, video_codec: Optional[str],
 
 
 def create_preview(src: Path, dest: Path, video_codec: Optional[str]) -> Path:
+    """Make a browser-playable copy of the video for the line drawing screen.
+
+    The preview only has to be scrubbable, so it is scaled down to 480p and
+    encoded at a low quality with the fastest preset. An hour of CCTV is a
+    long encode, and a full-resolution transcode of one would take minutes
+    for a preview nobody watches closely.
+    """
     cmd = [
         _ffmpeg(),
         "-hide_banner",
@@ -57,12 +64,15 @@ def create_preview(src: Path, dest: Path, video_codec: Optional[str]) -> Path:
         "-map", "0:v:0",
     ]
     if video_codec == "h264":
+        # Already the codec browsers want; only the container needs changing.
         cmd += ["-c:v", "copy"]
     else:
         cmd += [
             "-c:v", "libx264",
-            "-preset", "veryfast",
-            "-crf", "23",
+            "-preset", "ultrafast",
+            "-crf", "30",
+            # Cap the height at 480, but never upscale a smaller source.
+            "-vf", "scale=-2:'min(480,ih)'",
             "-pix_fmt", "yuv420p",
         ]
     cmd += ["-an", "-movflags", "+faststart", "-y", str(dest)]

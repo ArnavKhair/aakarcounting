@@ -60,24 +60,62 @@ class App {
 
   _loadVideo(video, videoId) {
     return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('Load timed out after 30s'));
-      }, 30000);
+      let attempts = 0;
+      const MAX_ATTEMPTS = 120;
 
-      video.oncanplay = () => {
-        clearTimeout(timeout);
-        resolve();
+      const tryLoad = () => {
+        const timeout = setTimeout(() => {
+          video.oncanplay = null;
+          video.onerror = null;
+          // A long video may still be having its preview made. Wait for it
+          // and try again rather than giving up on the upload.
+          if (attempts < MAX_ATTEMPTS) {
+            attempts++;
+            this._waitForPreview(videoId).then(tryLoad).catch(reject);
+          } else {
+            reject(new Error('Load timed out'));
+          }
+        }, 30000);
+
+        video.oncanplay = () => {
+          clearTimeout(timeout);
+          resolve();
+        };
+
+        video.onerror = () => {
+          clearTimeout(timeout);
+          if (attempts < MAX_ATTEMPTS) {
+            attempts++;
+            this._waitForPreview(videoId).then(tryLoad).catch(reject);
+          } else {
+            const err = video.error;
+            reject(new Error(`Media error ${err?.code}: ${err?.message || 'unknown'}`));
+          }
+        };
+
+        video.src = `/api/video/${videoId}`;
+        video.load();
       };
 
-      video.onerror = () => {
-        clearTimeout(timeout);
-        const err = video.error;
-        reject(new Error(`Media error ${err?.code}: ${err?.message || 'unknown'}`));
-      };
-
-      video.src = `/api/video/${videoId}`;
-      video.load();
+      tryLoad();
     });
+  }
+
+  async _waitForPreview(videoId) {
+    try {
+      const resp = await fetch(`/api/video/${videoId}/status`);
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (data.preview_ready) {
+        await new Promise(r => setTimeout(r, 200));
+        return;
+      }
+      // Still being made. Say so, then look again shortly.
+      this._showError('Preparing the video for preview...');
+      await new Promise(r => setTimeout(r, 2000));
+    } catch (e) {
+      await new Promise(r => setTimeout(r, 2000));
+    }
   }
 
   _setupPlayPause() {

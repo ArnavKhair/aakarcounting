@@ -76,7 +76,15 @@ MIN_MEAN_CONFIDENCE_TO_COUNT = 0.60
 # ground-contact points per image row and put the line through the dense band.
 LINE_POSITION = 0.35
 
-PREVIEW_EVERY_N_FRAMES = 2
+# How often the live preview is sent to the browser, in preview frames per
+# second of video. This is a view for the operator, not the work itself:
+# the detector runs on every frame regardless.
+#
+# It used to be every second frame, which on 30fps footage meant 15 preview
+# frames a second -- for an hour of video, 54000 JPEG encodes and WebSocket
+# messages, each one blocking the inference loop while it was sent. At 2fps
+# the same hour is 7200, and the preview still reads as a live view.
+PREVIEW_FPS = 2
 
 # How often (in frames) to write a checkpoint to disk for crash recovery.
 # Checkpoints store crossing events, tracks, and frame number so processing

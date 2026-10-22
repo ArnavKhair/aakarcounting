@@ -11,6 +11,7 @@ import asyncio
 import base64
 import json
 import os
+import queue
 import re
 import shutil
 import sys
@@ -156,14 +157,10 @@ async def upload_video(file: UploadFile = File(...)):
         os.remove(dest)
         raise HTTPException(400, "No video stream found")
 
+    original_playable = ext == ".mp4" and is_browser_playable(fmt, video_codec, audio_codec)
     preview_path = dest
-    if ext != ".mp4" or not is_browser_playable(fmt, video_codec, audio_codec):
+    if not original_playable:
         preview_path = dest.with_name(f"{dest.stem}_preview.mp4")
-        try:
-            await asyncio.to_thread(create_preview, dest, preview_path, video_codec)
-        except Exception as exc:
-            os.remove(dest)
-            raise HTTPException(400, f"Could not prepare video for preview: {exc}")
 
     duration = frame_count / fps if fps > 0 else 0
 
@@ -172,6 +169,8 @@ async def upload_video(file: UploadFile = File(...)):
         "filename": file.filename,
         "path": str(dest),
         "preview_path": str(preview_path),
+        "preview_ready": original_playable,
+        "original_playable": original_playable,
         "width": width,
         "height": height,
         "fps": round(fps, 2),
@@ -180,7 +179,43 @@ async def upload_video(file: UploadFile = File(...)):
     }
     video_store[video_id] = meta
 
+    # Making a playable preview of an hour of CCTV takes a while, and the
+    # upload does not have to wait for it: the line drawing screen asks for
+    # the preview when it is ready. A file the browser can already play is
+    # served as it is, with no transcode at all.
+    if not original_playable:
+        threading.Thread(
+            target=_make_preview,
+            args=(video_id, dest, preview_path, video_codec),
+            daemon=True,
+        ).start()
+
     return meta
+
+
+def _make_preview(video_id: str, src: Path, dest: Path, video_codec: str):
+    """Transcode a browser-playable preview in the background."""
+    try:
+        create_preview(src, dest, video_codec)
+    except Exception as exc:
+        print(f"[Preview] Could not prepare a preview for {video_id}: {exc}")
+        return
+    meta = video_store.get(video_id)
+    if meta is not None:
+        meta["preview_ready"] = True
+    print(f"[Preview] Ready for {video_id}")
+
+
+@app.get("/api/video/{video_id}/status")
+async def get_video_status(video_id: str):
+    """Report whether the browser-playable preview is ready to serve."""
+    meta = video_store.get(video_id)
+    if not meta:
+        raise HTTPException(404, "Video not found")
+    return {
+        "preview_ready": bool(meta.get("preview_ready")),
+        "original_playable": bool(meta.get("original_playable")),
+    }
 
 
 @app.get("/api/video/{video_id}")
@@ -189,7 +224,15 @@ async def get_video(video_id: str):
     meta = video_store.get(video_id)
     if not meta:
         raise HTTPException(404, "Video not found")
-    video_path = Path(meta.get("preview_path") or meta["path"])
+
+    if meta.get("preview_ready"):
+        video_path = Path(meta.get("preview_path") or meta["path"])
+    elif meta.get("original_playable"):
+        video_path = Path(meta["path"])
+    else:
+        # The preview is still being made. The client polls for it.
+        raise HTTPException(503, "Preview is still being prepared")
+
     media_type = "video/webm" if video_path.suffix.lower() == ".webm" else "video/mp4"
     return FileResponse(str(video_path), media_type=media_type)
 
@@ -401,6 +444,51 @@ async def _ws_send(websocket: WebSocket, msg_type: str, data: dict):
         print(f"[WS] Send error ({msg_type}): {e}")
 
 
+class FrameSender:
+    """Sends preview frames without letting a slow client stall the run.
+
+    The preview used to be sent straight from the processing thread, and the
+    send waited for the WebSocket to accept it. On a long video that is
+    thousands of sends, each one a place for the inference loop to sit
+    waiting on a browser.
+
+    Frames go through a short queue instead. If the client cannot keep up,
+    the queue fills and frames are dropped -- the preview skips ahead rather
+    than the counting falling behind.
+    """
+
+    def __init__(self, websocket, loop, maxsize: int = 2):
+        self._websocket = websocket
+        self._loop = loop
+        self._queue: queue.Queue = queue.Queue(maxsize=maxsize)
+        self._closed = False
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def send(self, payload: str):
+        if self._closed:
+            return
+        try:
+            self._queue.put_nowait(payload)
+        except queue.Full:
+            # The client is behind. Skip this frame.
+            pass
+
+    def _run(self):
+        while True:
+            payload = self._queue.get()
+            if payload is None:
+                break
+            _ws_send_sync(self._websocket, self._loop, "frame", payload)
+
+    def close(self):
+        self._closed = True
+        try:
+            self._queue.put_nowait(None)
+        except queue.Full:
+            pass
+
+
 def _ws_send_sync(websocket: WebSocket, loop: asyncio.AbstractEventLoop,
                   msg_type: str, data: dict):
     """Send a WebSocket message from a background thread."""
@@ -423,6 +511,7 @@ def _run_processing(
 ):
     """Run the processing pipeline in a background thread."""
     stop_event = session.stop_event
+    frame_sender = None
     try:
         meta = video_store[video_id]
         video_path = meta["path"]
@@ -470,6 +559,7 @@ def _run_processing(
             })
 
         frame_count = [0]
+        frame_sender = FrameSender(websocket, loop)
 
         def on_frame(annotated_frame, frame_num, total_frames):
             frame_count[0] += 1
@@ -478,7 +568,7 @@ def _run_processing(
             # Encode frame as JPEG and send via WebSocket
             _, buffer = cv2.imencode(".jpg", annotated_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
             b64 = base64.b64encode(buffer).decode("utf-8")
-            _ws_send_sync(websocket, loop, "frame", b64)
+            frame_sender.send(b64)
 
         # Import summary writers
         from core.processor import _write_native_summary, _write_canonical_summary
@@ -567,6 +657,8 @@ def _run_processing(
         traceback.print_exc()
         _ws_send_sync(websocket, loop, "error", {"message": str(e)})
     finally:
+        if frame_sender is not None:
+            frame_sender.close()
         # Only clear the entry if it is still this session. A reconnect
         # replaces it with a new one, and clearing that would leave the
         # live run untracked.
