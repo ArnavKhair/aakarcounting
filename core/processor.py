@@ -14,6 +14,7 @@ the shared canonical taxonomy (core.taxonomy).
 import csv
 import json
 import os
+import shutil
 import time
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
@@ -98,12 +99,94 @@ def _safe_filename(name: str) -> str:
     ).strip("_")
 
 
+# Bumped when the on-disk shape changes incompatibly. A checkpoint written by
+# an older build is not resumable and is ignored rather than misread.
+CHECKPOINT_VERSION = 2
+
+_CHECKPOINT_NAME = "checkpoint.json"
+_BACKUP_NAME = "checkpoint.json.bak"
+
+# Keys a checkpoint must have to be usable. A file missing any of these was
+# written by something else, or truncated.
+_REQUIRED_KEYS = ("frame_num", "crossing_events", "counted_crossings", "tracks")
+
+
+def _checkpoint_paths(output_dir: str) -> tuple[str, str]:
+    return (
+        os.path.join(output_dir, _CHECKPOINT_NAME),
+        os.path.join(output_dir, _BACKUP_NAME),
+    )
+
+
+def build_fingerprint(video_path: str, fps: float, counting_lines=None,
+                      road_labels=None) -> dict:
+    """Identify the run a checkpoint belongs to.
+
+    Resuming a checkpoint against a different video, or against different
+    counting lines, would produce numbers that look valid and are not -- the
+    crossings in the checkpoint were counted against lines that are no longer
+    there. The fingerprint is compared on resume and a mismatch is refused.
+    """
+    return {
+        "video_path": os.path.abspath(video_path),
+        "fps": round(float(fps), 3),
+        "lines": [
+            [[int(p1[0]), int(p1[1])], [int(p2[0]), int(p2[1])]]
+            for (p1, p2) in (counting_lines or [])
+        ],
+        "labels": [str(label) for label in (road_labels or [])],
+    }
+
+
+def fingerprint_mismatch(checkpoint: dict, fingerprint: dict,
+                         fields: tuple[str, ...] | None = None) -> str | None:
+    """Return a human-readable reason the checkpoint cannot be resumed, or None.
+
+    fields restricts the comparison. The upload screen does not know the
+    counting lines yet -- those are drawn on the next screen -- so it can only
+    check the video and the frame rate, and the full check happens when the
+    run actually starts.
+    """
+    if not checkpoint:
+        return "no checkpoint"
+    if checkpoint.get("checkpoint_version") != CHECKPOINT_VERSION:
+        return (f"checkpoint was written by a different version "
+                f"(v{checkpoint.get('checkpoint_version')} vs v{CHECKPOINT_VERSION})")
+
+    saved = checkpoint.get("fingerprint") or {}
+    if not saved:
+        return "checkpoint has no run fingerprint"
+
+    checks = (
+        ("video_path", "video"), ("fps", "frame rate"),
+        ("lines", "counting lines"), ("labels", "road labels"),
+    )
+    for key, label in checks:
+        if fields is not None and key not in fields:
+            continue
+        if saved.get(key) != fingerprint.get(key):
+            return f"{label} changed since the checkpoint was written"
+    return None
+
+
 def _save_checkpoint(output_dir: str, frame_num: int, crossing_events: list,
-                     counted_crossings: set, tracks: dict, total_detections: int):
-    """Write processing state to checkpoint.json for crash recovery."""
-    checkpoint_path = os.path.join(output_dir, "checkpoint.json")
+                     counted_crossings: set, tracks: dict, total_detections: int,
+                     total_frames: int = 0, fingerprint: dict | None = None):
+    """Write processing state to disk for crash recovery.
+
+    The write is atomic: state goes to a temp file, is flushed to the platter,
+    and is then renamed over the live checkpoint. A kill partway through
+    therefore leaves either the previous checkpoint or the new one, never a
+    half-written file that cannot be parsed.
+
+    The previous checkpoint is kept as a .bak so a corrupt live file still
+    leaves something to resume from.
+    """
+    path, backup = _checkpoint_paths(output_dir)
     data = {
+        "checkpoint_version": CHECKPOINT_VERSION,
         "frame_num": frame_num,
+        "total_frames": total_frames,
         "crossing_events": crossing_events,
         "counted_crossings": list(counted_crossings),
         "tracks": {
@@ -117,32 +200,86 @@ def _save_checkpoint(output_dir: str, frame_num: int, crossing_events: list,
             for tid, rec in tracks.items()
         },
         "total_detections": total_detections,
+        "fingerprint": fingerprint or {},
     }
-    with open(checkpoint_path, "w") as f:
+
+    os.makedirs(output_dir, exist_ok=True)
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w") as f:
         json.dump(data, f)
+        f.flush()
+        os.fsync(f.fileno())
+
+    # Keep the last known-good copy before the live file is replaced.
+    if os.path.exists(path):
+        try:
+            shutil.copy2(path, backup)
+        except OSError:
+            pass
+
+    os.replace(tmp_path, path)
+
+    # fsync the directory so the rename itself survives a power loss, not
+    # just the bytes inside the file.
+    try:
+        dir_fd = os.open(output_dir, os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+    except OSError:
+        pass
+
+
+def _read_checkpoint_file(path: str) -> dict | None:
+    """Parse one checkpoint file. Returns None if it is missing or unusable."""
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return None
+
+    if not isinstance(data, dict):
+        return None
+    if any(key not in data for key in _REQUIRED_KEYS):
+        return None
+
+    try:
+        tracks = {}
+        for tid_str, rec_data in data["tracks"].items():
+            rec = TrackRecord(
+                frames_seen=rec_data["frames_seen"],
+                confidence_sum=rec_data["confidence_sum"],
+                first_frame=rec_data.get("first_frame"),
+                last_frame=rec_data.get("last_frame"),
+            )
+            rec.class_votes = Counter(rec_data.get("class_votes", {}))
+            tracks[int(tid_str)] = rec
+        data["tracks"] = tracks
+        data["counted_crossings"] = set(
+            tuple(c) for c in data.get("counted_crossings", [])
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
+
+    return data
 
 
 def _load_checkpoint(output_dir: str) -> dict | None:
-    """Load checkpoint state from disk. Returns None if no checkpoint exists."""
-    checkpoint_path = os.path.join(output_dir, "checkpoint.json")
-    if not os.path.exists(checkpoint_path):
-        return None
-    with open(checkpoint_path) as f:
-        data = json.load(f)
-    # Reconstruct TrackRecord objects
-    tracks = {}
-    for tid_str, rec_data in data.get("tracks", {}).items():
-        rec = TrackRecord(
-            frames_seen=rec_data["frames_seen"],
-            confidence_sum=rec_data["confidence_sum"],
-            first_frame=rec_data.get("first_frame"),
-            last_frame=rec_data.get("last_frame"),
-        )
-        rec.class_votes = Counter(rec_data.get("class_votes", {}))
-        tracks[int(tid_str)] = rec
-    data["tracks"] = tracks
-    data["counted_crossings"] = set(tuple(c) for c in data.get("counted_crossings", []))
-    return data
+    """Load checkpoint state, falling back to the backup if the live file is bad.
+
+    A crash during a non-atomic write used to leave truncated JSON, and the
+    parse error took the whole resume path down with it. A corrupt checkpoint
+    is now a missing checkpoint.
+    """
+    path, backup = _checkpoint_paths(output_dir)
+    for candidate in (path, backup):
+        data = _read_checkpoint_file(candidate)
+        if data is not None:
+            return data
+    return None
 
 
 def load_checkpoint(output_dir: str) -> dict | None:
@@ -151,10 +288,48 @@ def load_checkpoint(output_dir: str) -> dict | None:
 
 
 def delete_checkpoint(output_dir: str):
-    """Remove checkpoint file after successful completion."""
-    checkpoint_path = os.path.join(output_dir, "checkpoint.json")
-    if os.path.exists(checkpoint_path):
-        os.remove(checkpoint_path)
+    """Remove checkpoint files after successful completion or a fresh start."""
+    for path in _checkpoint_paths(output_dir):
+        if os.path.exists(path):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+    tmp_path = os.path.join(output_dir, _CHECKPOINT_NAME + ".tmp")
+    if os.path.exists(tmp_path):
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+
+
+def _reserve_tracker_ids(tracker, next_free_id: int):
+    """Make the tracker hand out tracker ids above an already-used range.
+
+    supervision's ByteTrack assigns external ids from a counter that starts
+    at 1 (supervision/tracker/byte_tracker/core.py). A resumed run builds a
+    fresh tracker, so without this the new run reissues ids 1, 2, 3... and
+    those collide with the ids restored from the checkpoint. The collision is
+    silent and it costs counts: a new vehicle is merged into an old vehicle's
+    track record, and the crossing dedup -- keyed on (tracker_id, line) --
+    discards the new vehicle's crossing as if it had already been counted.
+
+    Failing to reserve the ids is not something to paper over, so this raises
+    rather than resuming into a run that would report the wrong number.
+    """
+    counter = getattr(tracker, "external_id_counter", None)
+    if counter is None or not hasattr(counter, "_id"):
+        raise RuntimeError(
+            "Cannot resume: this build of supervision does not expose the "
+            "tracker's id counter, so new tracks could reuse ids from the "
+            "checkpoint and corrupt the counts. Start a fresh run instead."
+        )
+    counter._id = max(next_free_id, counter._id)
+    if counter._id < next_free_id:
+        raise RuntimeError(
+            "Cannot resume: failed to reserve tracker ids above the "
+            "checkpointed range. Start a fresh run instead."
+        )
 
 
 def run_single_model(model: BaseModel, video_path: str, output_dir: str,
@@ -172,6 +347,7 @@ def run_single_model(model: BaseModel, video_path: str, output_dir: str,
     resume_frame: if provided, resume processing from this frame number.
     """
     safe_name = _safe_filename(model.name)
+    os.makedirs(output_dir, exist_ok=True)
     detections_csv = os.path.join(output_dir, f"vehicle_counts_{safe_name}.csv")
     crossings_csv = os.path.join(output_dir, f"crossings_{safe_name}.csv")
 
@@ -181,6 +357,7 @@ def run_single_model(model: BaseModel, video_path: str, output_dir: str,
 
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    fingerprint = build_fingerprint(video_path, fps, counting_lines, road_labels)
 
     tracker = sv.ByteTrack(
         frame_rate=fps,
@@ -208,12 +385,36 @@ def run_single_model(model: BaseModel, video_path: str, output_dir: str,
     if resume_frame is not None and resume_frame > 0:
         checkpoint = _load_checkpoint(output_dir)
         if checkpoint:
+            mismatch = fingerprint_mismatch(checkpoint, fingerprint)
+            if mismatch:
+                raise ValueError(
+                    f"Cannot resume: {mismatch}. Start a fresh run instead."
+                )
+
             crossing_events = checkpoint["crossing_events"]
             counted_crossings = checkpoint["counted_crossings"]
             tracks = defaultdict(TrackRecord, checkpoint["tracks"])
             total_detections = checkpoint["total_detections"]
             frame_num = checkpoint["frame_num"]
+
+            # Keep the new run's tracker ids clear of the restored ones.
+            _reserve_tracker_ids(tracker, max(tracks.keys(), default=0) + 1)
+
+            # Seeking a compressed video lands on the nearest keyframe, not on
+            # the requested frame, so the decoder can end up somewhere else
+            # entirely. Read back where we actually are and continue from
+            # there -- a frame_num that disagrees with the decoder would
+            # mislabel every timestamp after it.
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
+            actual = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+            if actual != frame_num:
+                if status_callback:
+                    status_callback(
+                        f"[{model.name}] Seek landed on frame {actual}, "
+                        f"expected {frame_num}"
+                    )
+                frame_num = actual
+
             if status_callback:
                 status_callback(f"[{model.name}] Resumed from frame {frame_num}")
 
@@ -224,7 +425,8 @@ def run_single_model(model: BaseModel, video_path: str, output_dir: str,
         if stop_event and stop_event.is_set():
             partial = True
             _save_checkpoint(output_dir, frame_num, crossing_events,
-                           counted_crossings, tracks, total_detections)
+                           counted_crossings, tracks, total_detections,
+                           total_frames=total_frames, fingerprint=fingerprint)
             break
 
         ret, frame = cap.read()
@@ -349,15 +551,20 @@ def run_single_model(model: BaseModel, video_path: str, output_dir: str,
         # Periodic checkpoint save
         if config.CHECKPOINT_INTERVAL > 0 and frame_num % config.CHECKPOINT_INTERVAL == 0:
             _save_checkpoint(output_dir, frame_num, crossing_events,
-                           counted_crossings, tracks, total_detections)
+                           counted_crossings, tracks, total_detections,
+                           total_frames=total_frames, fingerprint=fingerprint)
             if checkpoint_callback:
                 checkpoint_callback(frame_num, total_frames)
 
     elapsed = time.time() - start_time
     cap.release()
 
-    # Delete checkpoint on successful completion
-    delete_checkpoint(output_dir)
+    # Only a run that reached the end of the video is finished. A run that
+    # was stopped or paused still has work to do, and its checkpoint is the
+    # only way back to it -- deleting it here would make the whole resume
+    # path unreachable.
+    if not partial:
+        delete_checkpoint(output_dir)
 
     result = _summarise(model, tracks, crossing_events, frame_num, fps,
                         total_detections, elapsed, line_zones, partial,

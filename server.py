@@ -178,17 +178,40 @@ async def get_results(video_id: str):
 
 @app.get("/api/checkpoint/{video_id}")
 async def check_checkpoint(video_id: str):
-    """Check if a checkpoint exists for this video and return its frame number."""
-    from core.processor import load_checkpoint
+    """Report whether an interrupted run can be resumed for this video."""
+    from core.processor import build_fingerprint, fingerprint_mismatch, load_checkpoint
     output_dir = OUTPUT_DIR / video_id
     checkpoint = load_checkpoint(str(output_dir))
     if checkpoint is None:
         return {"exists": False}
+
+    # The counting lines are drawn on the next screen, so only the video and
+    # the frame rate can be compared here. The line check runs when the
+    # processing itself starts.
+    meta = video_store.get(video_id)
+    if meta is None:
+        mismatch = "video is no longer loaded"
+    else:
+        fingerprint = build_fingerprint(meta["path"], meta.get("fps") or 30.0)
+        mismatch = fingerprint_mismatch(
+            checkpoint, fingerprint, fields=("video_path", "fps")
+        )
+
     return {
         "exists": True,
         "frame_num": checkpoint["frame_num"],
         "total_frames": checkpoint.get("total_frames", 0),
+        "resumable": mismatch is None,
+        "reason": mismatch,
     }
+
+
+@app.delete("/api/checkpoint/{video_id}")
+async def clear_checkpoint(video_id: str):
+    """Delete the checkpoint for this video, so the next run starts fresh."""
+    from core.processor import delete_checkpoint
+    delete_checkpoint(str(OUTPUT_DIR / video_id))
+    return {"cleared": True}
 
 
 @app.get("/api/download/{video_id}/{filename}")
