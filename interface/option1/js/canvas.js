@@ -26,12 +26,21 @@ export class AnnotationOverlay {
     this.ctx = canvas.getContext('2d');
     this.video = video;
 
-    this._videoDisplayRect = { left: 0, top: 0, width: 0, height: 0 };
+    // The box the video and canvas both fill (see .video-frame in layout.css).
+    // CSS centres it in the workspace; this class sizes it to the video's
+    // aspect ratio and sizes the canvas's drawing buffer. (Placement: top-left.)
+    this.frameBox = canvas.parentElement;
+    this.workspace = this.frameBox.parentElement;
 
     this._syncSize();
 
-    this._resizeObserver = new ResizeObserver(() => this._syncSize());
-    this._resizeObserver.observe(canvas.parentElement);
+    // Re-fit when the workspace changes size (window resize, sidebar change).
+    this._resizeObserver = new ResizeObserver(() => this._fitFrameBox());
+    this._resizeObserver.observe(this.workspace);
+
+    // Re-sync once the real frame size is known (or changes).
+    video.addEventListener('loadedmetadata', () => this._syncSize());
+    video.addEventListener('resize', () => this._syncSize());
   }
 
   _syncSize() {
@@ -43,46 +52,27 @@ export class AnnotationOverlay {
     this.canvas.height = vh * dpr;
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    this._computeVideoDisplayRect();
-    this._applyCanvasRect();
+    this._fitFrameBox();
   }
 
-  _computeVideoDisplayRect() {
-    const container = this.canvas.parentElement;
-    if (!container) return;
-
-    const containerW = container.clientWidth;
-    const containerH = container.clientHeight;
+  /** Size the frame box to the largest video-shaped rectangle that fits. */
+  _fitFrameBox() {
     const vw = this.video.videoWidth || 1280;
     const vh = this.video.videoHeight || 720;
+    const cw = this.workspace.clientWidth;
+    const ch = this.workspace.clientHeight;
+    if (!cw || !ch) return;
 
-    const containerAspect = containerW / containerH;
-    const videoAspect = vw / vh;
-
-    let displayW, displayH;
-    if (containerAspect > videoAspect) {
-      displayH = containerH;
-      displayW = containerH * videoAspect;
-    } else {
-      displayW = containerW;
-      displayH = containerW / videoAspect;
-    }
-
-    this._videoDisplayRect = {
-      left: (containerW - displayW) / 2,
-      top: (containerH - displayH) / 2,
-      width: displayW,
-      height: displayH,
-    };
+    const scale = Math.min(cw / vw, ch / vh);
+    this.frameBox.style.width = vw * scale + 'px';
+    this.frameBox.style.height = vh * scale + 'px';
   }
 
-  _applyCanvasRect() {
-    const r = this._videoDisplayRect;
-    this.canvas.style.position = 'absolute';
-    this.canvas.style.left = r.left + 'px';
-    this.canvas.style.top = r.top + 'px';
-    this.canvas.style.width = r.width + 'px';
-    this.canvas.style.height = r.height + 'px';
+  /** Convert a point in video pixels to a fraction (0-1) of the frame box. */
+  toNormalized(p) {
+    const vw = this.video.videoWidth || 1280;
+    const vh = this.video.videoHeight || 720;
+    return { x: p.x / vw, y: p.y / vh };
   }
 
   syncSize() {
@@ -256,8 +246,26 @@ export class AnnotationOverlay {
     this.ctx.fillText(text, x - padding, y + height / 2);
   }
 
+  /**
+   * Paint the current video frame into the canvas. The video element itself
+   * is hidden: the frame and the annotations are drawn on this one canvas in
+   * the same video-pixel coordinates, so they cannot be misaligned.
+   */
+  drawVideoFrame() {
+    const vw = this.video.videoWidth || 1280;
+    const vh = this.video.videoHeight || 720;
+    // HAVE_CURRENT_DATA (2) or better means there is a frame to paint.
+    if (this.video.readyState >= 2) {
+      this.ctx.drawImage(this.video, 0, 0, vw, vh);
+    } else {
+      this.ctx.fillStyle = '#000';
+      this.ctx.fillRect(0, 0, vw, vh);
+    }
+  }
+
   render(state, cursorPos = null) {
     this.clear();
+    this.drawVideoFrame();
 
     const roads = state.roads;
     const hasClosedRoads = roads.some(r => r.isClosed);

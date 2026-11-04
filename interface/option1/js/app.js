@@ -200,13 +200,150 @@ class App {
   }
 
   _collectAnnotations() {
+    // Points are sent as fractions (0-1) of the video frame box, not pixels.
+    // The preview the user drew on may be a smaller copy of the source, so
+    // its pixels mean nothing to the server; a fraction of the frame is the
+    // same place at any resolution. The server scales it to the real frames.
+    const norm = (p) => this.overlay.toNormalized(p);
     return this.state.roads
       .filter(r => r.isClosed)
       .map(r => ({
-        polygon: r.polygon,
-        line: r.line,
+        polygon: r.polygon.map(norm),
+        line: r.line ? { start: norm(r.line.start), end: norm(r.line.end) } : null,
         label: r.label,
+        normalized: true,
       }));
+  }
+
+  /**
+   * Show or hide the processing view. The image comes from the server, which
+   * draws the counting lines with the same code a real run uses, so the
+   * preview matches the processing screen 1:1.
+   */
+  _showModelPreview(show) {
+    const img = document.getElementById('model-preview');
+    const badge = document.getElementById('model-preview-badge');
+    img.classList.toggle('visible', show);
+    badge.classList.toggle('visible', show);
+
+    if (!this._previewBound) {
+      this._previewBound = true;
+      // Refresh on pause and after a seek, and keep refreshing while playing.
+      this._video.addEventListener('pause', () => this._refreshModelPreview());
+      this._video.addEventListener('seeked', () => this._refreshModelPreview());
+      this._video.addEventListener('play', () => this._previewLoop());
+    }
+
+    if (show) {
+      this._refreshModelPreview();
+    }
+  }
+
+  _previewLoop() {
+    if (this.state.state !== States.PREVIEW || this._video.paused) return;
+    this._refreshModelPreview().then(() => {
+      setTimeout(() => this._previewLoop(), 150);
+    });
+  }
+
+  async _refreshModelPreview() {
+    if (this.state.state !== States.PREVIEW) return;
+    if (this._previewInFlight) return this._previewInFlight;
+
+    const badge = document.getElementById('model-preview-badge');
+    this._previewInFlight = (async () => {
+      try {
+        const resp = await fetch(`/api/line-preview/${this._videoId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            annotations: this._collectAnnotations(),
+            time: this._video.currentTime || 0,
+          }),
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const blob = await resp.blob();
+        const img = document.getElementById('model-preview');
+        const old = img.src;
+        img.src = URL.createObjectURL(blob);
+        if (old && old.startsWith('blob:')) URL.revokeObjectURL(old);
+        badge.textContent = 'Processing view';
+      } catch (err) {
+        console.error('[Preview] could not render processing view:', err);
+        badge.textContent = 'Processing view unavailable';
+      } finally {
+        this._previewInFlight = null;
+      }
+    })();
+    return this._previewInFlight;
+  }
+
+  // ── Debug snapshot ───────────────────────────────────────────────────────
+  // Records where clicks land and, on Preview, saves the drawing canvas next
+  // to the server's processing view (see /api/debug/snapshot), so a mismatch
+  // on any machine can be inspected from files in the project's debug folder.
+
+  _recordClick(e, pos) {
+    const r = this.overlay.canvas.getBoundingClientRect();
+    this._clicks = this._clicks || [];
+    this._clicks.push({
+      state: this.state.state,
+      client: [e.clientX, e.clientY],
+      offset: [e.offsetX, e.offsetY],
+      canvasRect: [r.left, r.top, r.width, r.height],
+      videoPx: [pos.x, pos.y],
+      normalized: this.overlay.toNormalized(pos),
+    });
+    if (this._clicks.length > 50) this._clicks.shift();
+  }
+
+  _rectOf(el) {
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return [r.left, r.top, r.width, r.height];
+  }
+
+  _sendDebugSnapshot() {
+    try {
+      const v = this._video;
+      const c = this.overlay.canvas;
+      const cs = getComputedStyle(c);
+      const client = {
+        userAgent: navigator.userAgent,
+        window: [window.innerWidth, window.innerHeight],
+        screen: [screen.width, screen.height],
+        devicePixelRatio: window.devicePixelRatio,
+        visualViewportScale: window.visualViewport ? window.visualViewport.scale : null,
+        video: { intrinsic: [v.videoWidth, v.videoHeight], rect: this._rectOf(v),
+                 currentTime: v.currentTime, src: v.currentSrc },
+        canvas: { buffer: [c.width, c.height], rect: this._rectOf(c),
+                  cssSize: [cs.width, cs.height], transform: cs.transform },
+        frameBox: { rect: this._rectOf(document.getElementById('video-frame')),
+                    style: document.getElementById('video-frame').getAttribute('style') },
+        container: this._rectOf(document.getElementById('annotation-container')),
+        workspace: this._rectOf(document.querySelector('.workspace')),
+        stylesheetHasTopLeft: [...document.styleSheets].some(ss => {
+          try { return [...ss.cssRules].some(r => r.selectorText === '.video-frame' && r.style.left === '0px'); }
+          catch (_) { return false; }
+        }),
+      };
+      let canvasPng = null;
+      try { canvasPng = c.toDataURL('image/png'); } catch (err) { client.canvasExportError = String(err); }
+
+      fetch(`/api/debug/snapshot/${this._videoId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client,
+          clicks: this._clicks || [],
+          annotations: this._collectAnnotations(),
+          time: v.currentTime || 0,
+          canvas_png: canvasPng,
+        }),
+      }).catch(err => console.error('[Debug] snapshot failed:', err));
+    } catch (err) {
+      console.error('[Debug] snapshot failed:', err);
+    }
   }
 
   _startProcessing() {
@@ -236,6 +373,7 @@ class App {
 
     canvas.addEventListener('click', (e) => {
       const pos = this.overlay.screenToCanvas(e.clientX, e.clientY);
+      this._recordClick(e, pos);
 
       if (this.state.state === States.DRAWING_POLYGON) {
         this.penTool.onClick(pos);
@@ -361,9 +499,12 @@ class App {
       }
 
       if (data.next === States.PREVIEW) {
-        this._video.play().catch(() => {});
+        this._video.pause();
+        this._sendDebugSnapshot();
+        this._showModelPreview(true);
       } else if (data.prev === States.PREVIEW) {
         this._video.pause();
+        this._showModelPreview(false);
       }
 
       const container = document.getElementById('annotation-container');

@@ -29,3 +29,6 @@ interface/*/assets/*.webm
 
 # Temp uploads
 vcai_uploads_*/
+
+# Annotation debug snapshots
+debug/

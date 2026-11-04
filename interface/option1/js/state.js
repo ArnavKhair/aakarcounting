@@ -32,7 +32,7 @@ const Instructions = {
   },
   [States.PREVIEW]: {
     icon: 'eye',
-    text: 'Review your annotations. The video will play through to verify the road area and counting line are correctly placed. Use "Make Changes" to edit, or "Start Processing" when ready.',
+    text: 'This is the processing view: the frame and counting lines are drawn by the same code processing uses, so what you see here is exactly what will be counted. Press play to step through the video. Use "Make Changes" to edit, or "Start Processing" when ready.',
   },
   [States.EDITING]: {
     icon: 'eraser',

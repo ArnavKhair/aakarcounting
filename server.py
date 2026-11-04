@@ -24,9 +24,9 @@ from typing import Optional
 
 import cv2
 import uvicorn
-from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import Body, FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
+from fastapi.responses import FileResponse, RedirectResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from core.media import create_preview, is_browser_playable, probe_video
@@ -237,6 +237,125 @@ async def get_video(video_id: str):
     return FileResponse(str(video_path), media_type=media_type)
 
 
+def _render_processing_view(meta: dict, annotations: list, time_s: float):
+    """Draw one frame the way the processing screen will: same decoder, same
+    line conversion, same overlay code. Returns (image, info)."""
+    from core import overlay
+
+    t = max(0.0, float(time_s or 0.0))
+    cap = cv2.VideoCapture(meta["path"])
+    try:
+        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        frame_num = min(int(round(t * fps)), max(total - 1, 0))
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
+        ok, frame = cap.read()
+        if not ok or frame is None:
+            # Seeking can fail near the end of some files; fall back to frame 0.
+            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            frame_num = 0
+            ok, frame = cap.read()
+    finally:
+        cap.release()
+    if not ok or frame is None:
+        raise HTTPException(500, "Could not read a frame from the video")
+
+    h, w = frame.shape[:2]
+    lines, labels = _convert_annotations(annotations, w, h)
+    annotated = overlay.draw(
+        frame, [], None, "Preview", frame_num, total,
+        counted=0,
+        counting_lines=[(sx, sy, ex, ey) for (sx, sy), (ex, ey) in lines] or None,
+        road_labels=labels,
+        road_counts={label: 0 for label in labels},
+    )
+    info = {"frame_num": frame_num, "frame_size": [w, h], "lines_px": lines,
+            "labels": labels}
+    return annotated, info
+
+
+DEBUG_DIR = PROJECT_ROOT / "debug"
+
+
+@app.post("/api/debug/snapshot/{video_id}")
+def debug_snapshot(video_id: str, payload: dict = Body(...)):
+    """Save what the drawing screen showed next to what processing will use.
+
+    Written when the user opens the preview, so a mismatch on someone's
+    machine can be inspected from the files instead of described:
+      drawing.png          -- the drawing canvas exactly as the browser had it
+      processing_view.jpg  -- the server's render of the same moment
+      report.json          -- browser geometry, clicks, annotations, video info
+    """
+    import datetime
+    meta = video_store.get(video_id)
+    if meta is None:
+        raise HTTPException(404, "Video not found")
+
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    out = DEBUG_DIR / f"{stamp}_{video_id}"
+    os.makedirs(out, exist_ok=True)
+
+    canvas_url = payload.pop("canvas_png", None) or ""
+    if canvas_url.startswith("data:image/png;base64,"):
+        with open(out / "drawing.png", "wb") as f:
+            f.write(base64.b64decode(canvas_url.split(",", 1)[1]))
+
+    annotations = payload.get("annotations") or []
+    try:
+        annotated, info = _render_processing_view(meta, annotations, payload.get("time") or 0.0)
+        cv2.imwrite(str(out / "processing_view.jpg"), annotated)
+    except Exception as exc:
+        info = {"error": str(exc)}
+
+    preview_size = None
+    try:
+        pcap = cv2.VideoCapture(meta.get("preview_path") or meta["path"])
+        preview_size = [int(pcap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(pcap.get(cv2.CAP_PROP_FRAME_HEIGHT))]
+        pcap.release()
+    except Exception:
+        pass
+
+    report = {
+        "client": payload.get("client"),
+        "clicks": payload.get("clicks"),
+        "annotations": annotations,
+        "video_meta": {k: meta.get(k) for k in ("filename", "width", "height", "fps",
+                                                "original_playable", "preview_path", "path")},
+        "preview_file_size": preview_size,
+        "server_render": info,
+    }
+    with open(out / "report.json", "w", encoding="utf-8") as f:
+        json.dump(report, f, indent=2, default=str)
+    print(f"[Debug] Snapshot saved to {out}")
+    return {"saved": str(out)}
+
+
+@app.post("/api/line-preview/{video_id}")
+def line_preview(video_id: str, payload: dict = Body(...)):
+    """Render one frame exactly as the processing screen will show it.
+
+    The frame is read from the original video with OpenCV -- the same decoder
+    the model reads -- and the counting lines go through the same conversion
+    (_convert_annotations) and the same drawing code (core.overlay.draw) as a
+    real run. What this returns is therefore what processing will count
+    against, not a browser-side approximation of it.
+
+    payload: {"annotations": [...], "time": seconds into the video}
+    """
+    meta = video_store.get(video_id)
+    if meta is None:
+        raise HTTPException(404, "Video not found")
+    annotated, _info = _render_processing_view(
+        meta, payload.get("annotations") or [], payload.get("time") or 0.0
+    )
+    ok, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    if not ok:
+        raise HTTPException(500, "Could not encode the preview frame")
+    return Response(content=buf.tobytes(), media_type="image/jpeg",
+                    headers={"Cache-Control": "no-store"})
+
+
 @app.get("/api/results/{video_id}")
 async def get_results(video_id: str):
     """Return summary.json contents for a completed run."""
@@ -305,10 +424,15 @@ mimetypes.add_type("application/javascript", ".js")
 mimetypes.add_type("text/css", ".css")
 
 
+_NO_CACHE = {"Cache-Control": "no-cache"}
+
+
 def _serve_file(file_path: Path):
     """Serve a file with the correct MIME type."""
     media_type = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
-    return FileResponse(file_path, media_type=media_type)
+    # no-cache: the browser must revalidate on every load, so an updated
+    # interface file is never silently replaced by a stale cached copy.
+    return FileResponse(file_path, media_type=media_type, headers=_NO_CACHE)
 
 
 @app.get("/shared/{path:path}")
@@ -328,7 +452,7 @@ async def serve_screen(screen: str):
     index = INTERFACE_DIR / screen / "index.html"
     if not index.exists():
         raise HTTPException(404, "Screen not found")
-    return FileResponse(index)
+    return FileResponse(index, headers=_NO_CACHE)
 
 
 @app.get("/{screen}/{path:path}")
@@ -521,12 +645,25 @@ def _run_processing(
         os.makedirs(output_dir, exist_ok=True)
 
         # Convert annotations to processor format (normalized -> pixel coords)
-        counting_lines, road_labels = _convert_annotations(
-            annotations,
-            meta.get("width", 1920),
-            meta.get("height", 1080),
+        # Scale against the frames the model will actually see, read from
+        # the video itself rather than the size recorded at upload.
+        frame_w, frame_h = _decoded_frame_size(
+            video_path, meta.get("width", 1920), meta.get("height", 1080)
         )
-        print(f"[Processing] video={video_path}, lines={counting_lines}, labels={road_labels}")
+        counting_lines, road_labels = _convert_annotations(
+            annotations, frame_w, frame_h,
+        )
+        run_line = (f"[Processing] video={video_path} frame={frame_w}x{frame_h}, "
+                    f"normalized={[a.get('normalized', False) for a in annotations]}, "
+                    f"annotations={json.dumps(annotations)}, "
+                    f"lines={counting_lines}, labels={road_labels}")
+        print(run_line)
+        try:
+            os.makedirs(DEBUG_DIR, exist_ok=True)
+            with open(DEBUG_DIR / "processing.log", "a", encoding="utf-8") as f:
+                f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + run_line + "\n")
+        except Exception:
+            pass
 
         # Import and run the processor
         from core.processor import run_single_model
@@ -666,22 +803,56 @@ def _run_processing(
             active_sessions.pop(video_id, None)
 
 
-def _convert_annotations(annotations: list, video_width: int, video_height: int) -> tuple:
+def _decoded_frame_size(video_path: str, fallback_w: int, fallback_h: int) -> tuple:
+    """Return (width, height) of the frames the processor will decode.
+
+    Read from an actual frame, not CAP_PROP_FRAME_WIDTH/HEIGHT: with a rotated
+    phone video OpenCV rotates the frames it decodes, and the reported
+    properties do not always follow.
+    """
+    cap = cv2.VideoCapture(str(video_path))
+    try:
+        ok, frame = cap.read()
+        if ok and frame is not None:
+            h, w = frame.shape[:2]
+            return w, h
+    finally:
+        cap.release()
+    return fallback_w, fallback_h
+
+
+def _convert_annotations(annotations: list, frame_width: int, frame_height: int) -> tuple:
     """Convert frontend annotation format to processor counting_lines format.
 
-    Frontend sends pixel coordinates (video-native resolution): [{line: {start:{x,y}, end:{x,y}}, label: "...", ...}]
-    screenToCanvas() already converts screen coords to video pixel coords.
+    The frontend sends each point as a fraction (0-1) of the video frame box:
+    [{line: {start:{x,y}, end:{x,y}}, label: "...", normalized: true, ...}]
+    Fractions are resolution-independent, so they are scaled here to the size
+    of the frames the processor decodes.
+
+    Older clients sent pixels in the preview's resolution, with an optional
+    frame: {width, height}; those are still scaled from that frame size.
+
     Processor expects: [((sx, sy), (ex, ey)), ...] and a list of labels.
     """
     lines = []
     labels = []
     for road in annotations:
         line = road.get("line")
-        if line and line.get("start") and line.get("end"):
-            start = line["start"]
-            end = line["end"]
-            lines.append(((start["x"], start["y"]), (end["x"], end["y"])))
-            labels.append(road.get("label", "Unnamed Road"))
+        if not (line and line.get("start") and line.get("end")):
+            continue
+        if road.get("normalized"):
+            sx_scale, sy_scale = frame_width, frame_height
+        else:
+            frame = road.get("frame") or {}
+            sx_scale = frame_width / (frame.get("width") or frame_width)
+            sy_scale = frame_height / (frame.get("height") or frame_height)
+        start = line["start"]
+        end = line["end"]
+        lines.append((
+            (start["x"] * sx_scale, start["y"] * sy_scale),
+            (end["x"] * sx_scale, end["y"] * sy_scale),
+        ))
+        labels.append(road.get("label", "Unnamed Road"))
     return lines, labels
 
 
