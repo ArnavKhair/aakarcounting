@@ -10,6 +10,25 @@ Aakar exports their 24hr CCTV footage into 1 hour chunks. For this parent update
 
 ---
 
+## v1.2.3
+
+### What's added
+
+- The preview step on the line drawing screen now shows a frame rendered by the server with the same code a processing run uses, so what it shows is exactly what will be counted. Pressing play steps through the video.
+- Opening the preview saves a debug snapshot to `debug/`: the drawing screen as the browser showed it, the server's render of the same moment, and the browser's geometry. Each run's counting lines are logged to `debug/processing.log`.
+
+### Fixed
+
+- The counting line the model used did not match the line drawn on the desktop. Points were recorded in the pixels of the 480p browser preview and used as if they were pixels of the original video, and on a large window the video and the drawing layer were sized by different rules. Points are now saved as fractions of the frame and scaled on the server to the frames the model actually decodes, and the video is painted into the drawing canvas so the picture and the lines are one surface.
+- A plain reload kept stale copies of the interface scripts, so updates did not appear until a hard reload. Interface files are now served with `Cache-Control: no-cache`.
+- `start.bat` crashed before opening the browser, and fell back to a Python without the dependencies when the venv had no `activate.bat`. It now runs the venv's Python directly and keeps the window open on an error.
+
+### What's removed
+
+- None
+
+---
+
 ## v1.2.1
 
 ### What's added
