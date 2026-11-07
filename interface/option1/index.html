@@ -62,8 +62,17 @@
 
       <main class="workspace">
         <div class="annotation-container" id="annotation-container" data-mode="idle">
-          <video id="video-player" muted playsinline preload="auto"></video>
-          <canvas id="annotation-canvas"></canvas>
+          <!-- The video frame box: sized to the video's exact aspect ratio.
+               The video and the annotation canvas both fill it 1:1, so what
+               is drawn always sits on the same pixels it was drawn over. -->
+          <div class="video-frame" id="video-frame">
+            <video id="video-player" muted playsinline preload="auto"></video>
+            <canvas id="annotation-canvas"></canvas>
+          </div>
+          <!-- Preview step: a frame rendered by the server with the same code
+               the processing screen uses, so it matches processing 1:1. -->
+          <img id="model-preview" class="model-preview" alt="Counting line preview, as processing will see it">
+          <div class="model-preview-badge" id="model-preview-badge">Processing view</div>
         </div>
 
         <div class="canvas-panel label-panel" id="label-panel">

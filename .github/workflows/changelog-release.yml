@@ -1,0 +1,47 @@
+# Publish each new changelog version as a GitHub Release.
+# The version is the highest vX.Y.Z heading in changelog/*.md (same rule the
+# app uses). Pushes that don't add a new version are a no-op.
+name: Changelog release
+
+on:
+  push:
+    branches: ["**"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: changelog-release-${{ github.ref }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Read latest changelog entry
+        id: cl
+        run: python .github/scripts/changelog_release.py notes.md
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.cl.outputs.version }}
+          PRERELEASE: ${{ github.ref_name != 'main' }}
+        run: |
+          if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
+            echo "$VERSION already released; nothing to do."
+            exit 0
+          fi
+          flags=""
+          if [ "$PRERELEASE" = "true" ]; then flags="--prerelease"; fi
+          gh release create "$VERSION" $flags \
+            --target "$GITHUB_SHA" \
+            --title "$VERSION" \
+            --notes-file notes.md

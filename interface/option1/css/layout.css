@@ -147,16 +147,77 @@
   background: #000;
 }
 
-.annotation-container video {
-  display: block;
-  max-width: 100%;
-  max-height: 100%;
-  pointer-events: none;
+/* The video frame box. canvas.js sets its width and height in pixels to the
+   largest size with the video's exact aspect ratio that fits the workspace.
+   It is pinned to the workspace's top-left corner: no centring maths at all.
+
+   The canvas is the only thing shown in it. canvas.js paints each video frame
+   into the canvas and draws the annotations on top, in the same coordinates,
+   so the picture and the lines are one surface and cannot drift apart. */
+.video-frame {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
 }
 
-.annotation-container canvas {
+.video-frame canvas {
   position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
   z-index: 5;
+}
+
+/* The <video> element only decodes frames; it is never shown. It stays in
+   the layout (not display:none) so browsers keep decoding and playing it. */
+.video-frame video {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none !important;
+}
+
+/* Preview step: the server-rendered frame (see /api/line-preview). It is a
+   single image with the lines already burned in, exactly as the processing
+   screen receives frames, so nothing in it can be misaligned. */
+.model-preview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: left top;
+  z-index: 6;
+  display: none;
+  background: #000;
+}
+
+.model-preview.visible {
+  display: block;
+}
+
+.model-preview-badge {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 7;
+  display: none;
+  padding: 4px 10px;
+  border-radius: 4px;
+  background: rgba(26, 26, 26, 0.85);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.model-preview-badge.visible {
+  display: block;
 }
 
 /* Cursor modes */

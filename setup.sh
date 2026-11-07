@@ -42,6 +42,11 @@ echo ""
 echo "Installing dependencies..."
 pip install -r requirements.txt --quiet
 
+# Enable repo git hooks (changelog/version check on push)
+if [ -d ".git" ] && command -v git &> /dev/null; then
+    git config core.hooksPath .githooks || true
+fi
+
 echo ""
 echo "=== Setup Complete ==="
 echo ""

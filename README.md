@@ -119,6 +119,10 @@ All settings in `core/config.py`:
 - macOS, Linux, or Windows
 - ~2GB disk for model weights (downloaded on first run)
 
+## Versioning & Changelog
+
+The version shown in the app is the highest `vX.Y.Z` heading in `changelog/*.md`. Every push needs a new version entry. The `.githooks/pre-push` hook enforces this, and the setup scripts turn it on. See `CLAUDE.md` for the full workflow, which humans and agents both follow. Each new version is also published automatically to the repo's [Releases](https://github.com/ArnavKhair/aakarcounting/releases) page, with that version's changelog section as the release notes.
+
 ## License
 
 See repository for license details.
