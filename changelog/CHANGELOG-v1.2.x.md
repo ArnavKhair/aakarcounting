@@ -10,6 +10,23 @@ Aakar exports their 24hr CCTV footage into 1 hour chunks. For this parent update
 
 ---
 
+## v1.2.4
+
+### What's added
+
+- Each new version is now published automatically to the repo's GitHub Releases page, with its changelog section as the release notes. Versions pushed from branches other than `main` appear as pre-releases.
+- Every push now has to come with a new changelog version, so the version shown in the app always matches what was pushed. A git hook (turned on by `setup.bat` / `setup.sh`) blocks pushes that skip this, and `CLAUDE.md` / `AGENTS.md` explain the workflow to anyone working on the project, including AI agents.
+
+### Fixed
+
+- None
+
+### What's removed
+
+- None
+
+---
+
 ## v1.2.3
 
 ### What's added
