@@ -38,7 +38,7 @@ Select a video file (MP4, AVI, MOV, MKV, WebM) through the web interface.
 The AI model detects and tracks vehicles across all frames. Live preview shows annotated frames with road labels and running counts.
 
 ### 4. Results
-View per-road crossing counts with vehicle type breakdowns. Download results as CSV or JSON.
+View per-road crossing counts broken down by Aakar's vehicle categories. Every finished run is saved to its own folder under `Final Results/` with an Excel report. **Copy for WhatsApp** puts an overview of the run on the clipboard, formatted to paste into a chat.
 
 ## Architecture
 
@@ -105,13 +105,46 @@ All settings in `core/config.py`:
 
 ## Output Files
 
+Each finished run gets one folder, named after the video and the time the run finished:
+
+```
+Final Results/
+  MG Road cam2 - 2026-11-11 14.30/
+    Traffic Count Report.xlsx
+    raw data/
+      crossings.csv
+      detections.csv
+      summary.json
+```
+
 | File | Contents |
 |------|----------|
-| `crossings_{model}.csv` | One row per counted vehicle with road zone, class, confidence |
-| `vehicle_counts_{model}.csv` | Every per-frame detection with tracker_id |
-| `vehicle_summary.csv` | Per-model counts by vehicle class |
-| `canonical_summary.csv` | Cross-model comparison table |
-| `summary.json` | Full run metadata and per-road results |
+| `Traffic Count Report.xlsx` | **Overview** (video, date, totals per road), **By Road** (every vehicle category against every road), **Crossings** (one row per counted vehicle) |
+| `raw data/crossings.csv` | One row per counted vehicle with road zone, class, confidence |
+| `raw data/detections.csv` | Every per-frame detection with tracker_id |
+| `raw data/summary.json` | Full run metadata and per-road results |
+
+While a run is in progress its files and checkpoint live in `outputs/<video id>/`; they move to `Final Results/` when the run completes.
+
+### Vehicle categories
+
+Results use Aakar's 16 categories. The mapping from the model's own labels lives in `core/aakar_categories.py`, and each category is shown with the model's classification in brackets, e.g. `Cars/Vans/Jeeps (Hatchback, Sedan, SUV, Van)`.
+
+Six categories describe a distinction the model cannot make yet. They are listed with a dash, and their vehicles are counted in a neighbouring category:
+
+| Category | Counted in |
+|----------|------------|
+| Taxi | Cars/Vans/Jeeps |
+| Govt. Bus | Private Bus |
+| Goods Auto | Auto Rickshaw |
+| Mini LCV | LCV |
+| 3 Axle Truck, MAV | 2 Axle Truck |
+
+## Tests
+
+```
+venv\Scripts\python -m unittest discover tests
+```
 
 ## Requirements
 

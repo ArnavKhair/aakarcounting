@@ -125,7 +125,70 @@
   font-size: var(--font-size-xl);
   font-weight: var(--font-weight-semibold);
   color: var(--color-text);
+  margin-bottom: var(--space-1);
+}
+
+.results-subtitle {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
   margin-bottom: var(--space-6);
+  min-height: 1.4em;
+  overflow-wrap: anywhere;
+}
+
+.sidebar__note {
+  margin-top: var(--space-2);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* ── Rows the model cannot separate yet ───────────────────────────── */
+.road-table tr.road-table__unsplit td {
+  color: var(--color-text-muted);
+}
+
+.category-legend {
+  margin-bottom: var(--space-8);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.category-legend:empty {
+  display: none;
+}
+
+.category-legend__title {
+  margin-bottom: var(--space-1);
+}
+
+.category-legend ul {
+  margin: 0;
+  padding-left: var(--space-5);
+}
+
+/* ── Toast (same look as the processing screen's) ─────────────────── */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  z-index: 9999;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity var(--transition-normal), transform var(--transition-normal);
+  pointer-events: none;
+}
+
+.toast.visible {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 /* ── Processing stats (in main content) ───────────────────────────── */

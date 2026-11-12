@@ -41,16 +41,42 @@
         </div>
 
         <div class="sidebar__section">
-          <div class="sidebar__section-label">Downloads</div>
+          <div class="sidebar__section-label">Share</div>
           <div class="sidebar__downloads">
-            <button class="btn btn--secondary btn--sm" id="btn-download-summary">
+            <button class="btn btn--primary btn--sm" id="btn-copy-whatsapp">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+              Copy for WhatsApp
+            </button>
+          </div>
+        </div>
+
+        <div class="sidebar__section">
+          <div class="sidebar__section-label">Final Results</div>
+          <div class="sidebar__downloads">
+            <button class="btn btn--secondary btn--sm" id="btn-download-report">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                 <polyline points="7 10 12 15 17 10"/>
                 <line x1="12" y1="15" x2="12" y2="3"/>
               </svg>
-              Summary CSV
+              Excel report
             </button>
+            <button class="btn btn--secondary btn--sm" id="btn-open-folder">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              </svg>
+              Open folder
+            </button>
+          </div>
+          <div class="sidebar__note" id="folder-name"></div>
+        </div>
+
+        <div class="sidebar__section">
+          <div class="sidebar__section-label">Raw data</div>
+          <div class="sidebar__downloads">
             <button class="btn btn--secondary btn--sm" id="btn-download-crossings">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -84,7 +110,8 @@
       <main class="workspace">
         <div class="results-scroll">
           <div class="results-container">
-            <h1 class="results-title">Processing Complete</h1>
+            <h1 class="results-title">Final Results</h1>
+            <p class="results-subtitle" id="results-subtitle"></p>
 
             <div class="stats-section">
               <h2 class="section-title">Processing Stats</h2>
@@ -110,6 +137,8 @@
 
             <div id="road-sections"></div>
 
+            <div class="category-legend" id="category-legend"></div>
+
             <div class="info-section" id="info-section">
               <h2 class="info-title">Video Info</h2>
               <div class="info-grid" id="info-grid">
@@ -122,6 +151,7 @@
   </div>
 
   <div class="error-banner" id="error-banner"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="js/chart.min.js"></script>
   <script type="module" src="js/app.js"></script>

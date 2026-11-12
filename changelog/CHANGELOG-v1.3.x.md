@@ -20,6 +20,7 @@ Until now a finished run left a handful of loose CSV files in a folder named wit
 - Aakar's vehicle categories. The report, the copied message and the results page now use Aakar's 16 categories instead of the model's own names, and each category shows the model's classification behind it in brackets. Six categories the model cannot separate yet (Taxi, Goods Auto, Govt. Bus, Mini LCV, 3 Axle Truck, MAV) show a dash, and their vehicles are counted in the neighbouring category named in the note.
 - The results page is headed "Final Results" and shows the video's real name and the date it was processed. It has buttons for the Excel report and for opening the results folder.
 - The video's original file name, the time of the run, the video length and the app version are saved with the results.
+- The Excel report needs one new package. Run `setup.bat` (or `setup.sh`) once after updating. Without it a run still finishes and keeps its raw data, and the results page says the report could not be written.
 
 ### Fixed
 
