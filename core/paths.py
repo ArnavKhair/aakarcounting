@@ -5,6 +5,7 @@ import os
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEIGHTS_DIR = os.path.join(PROJECT_ROOT, "models", "weights")
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, "outputs")
+FINAL_RESULTS_DIR = os.path.join(PROJECT_ROOT, "Final Results")
 
 
 def ensure_weights_dir() -> str:

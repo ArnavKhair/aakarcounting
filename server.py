@@ -29,6 +29,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from core import final_results
 from core.media import create_preview, is_browser_playable, probe_video
 from core.processor import load_checkpoint
 
@@ -37,6 +38,7 @@ from core.processor import load_checkpoint
 PROJECT_ROOT = Path(__file__).parent
 INTERFACE_DIR = PROJECT_ROOT / "interface"
 OUTPUT_DIR = PROJECT_ROOT / "outputs"
+FINAL_RESULTS_DIR = PROJECT_ROOT / "Final Results"
 CHANGELOG_DIR = PROJECT_ROOT / "changelog"
 
 # Temp directory for uploaded videos
@@ -106,6 +108,36 @@ class Session:
 
 # Active processing sessions: video_id -> Session
 active_sessions: dict[str, Session] = {}
+
+# Finished runs: video_id -> its folder under Final Results
+final_dirs: dict[str, Path] = {}
+
+COUNTING_METHOD = "Line crossing (ByteTrack + LineZone)"
+
+
+def _final_dir(video_id: str) -> Optional[Path]:
+    """The Final Results folder of a finished run, or None.
+
+    Remembered while the server is up; after a restart it is found again by
+    the id saved in the folder's summary, so it survives being renamed.
+    """
+    folder = final_dirs.get(video_id)
+    if folder is not None and folder.is_dir():
+        return folder
+    folder = final_results.find_folder(FINAL_RESULTS_DIR, video_id)
+    if folder is not None:
+        final_dirs[video_id] = folder
+    return folder
+
+
+# What can be downloaded from a finished run. The client names a kind, never
+# a file, so a request cannot reach outside the run's folder.
+DOWNLOADS = {
+    "report": (final_results.REPORT_NAME,),
+    "crossings": (final_results.RAW_DIR, final_results.CROSSINGS_NAME),
+    "detections": (final_results.RAW_DIR, final_results.DETECTIONS_NAME),
+    "summary": (final_results.RAW_DIR, final_results.SUMMARY_NAME),
+}
 
 
 # ── REST endpoints ─────────────────────────────────────────────────────────
@@ -358,12 +390,12 @@ def line_preview(video_id: str, payload: dict = Body(...)):
 
 @app.get("/api/results/{video_id}")
 async def get_results(video_id: str):
-    """Return summary.json contents for a completed run."""
-    output_dir = OUTPUT_DIR / video_id
-    summary_path = output_dir / "summary.json"
-    if not summary_path.exists():
+    """Return the saved summary of a completed run."""
+    folder = _final_dir(video_id)
+    summary_path = folder / final_results.RAW_DIR / final_results.SUMMARY_NAME if folder else None
+    if summary_path is None or not summary_path.exists():
         raise HTTPException(404, "Results not found")
-    with open(summary_path) as f:
+    with open(summary_path, encoding="utf-8") as f:
         return JSONResponse(json.load(f))
 
 
@@ -405,16 +437,40 @@ async def clear_checkpoint(video_id: str):
     return {"cleared": True}
 
 
-@app.get("/api/download/{video_id}/{filename}")
-async def download_file(video_id: str, filename: str):
-    """Download a CSV or JSON file from the output directory."""
-    output_dir = OUTPUT_DIR / video_id
-    file_path = output_dir / filename
-    if not file_path.exists():
+@app.get("/api/download/{video_id}/{kind}")
+async def download_file(video_id: str, kind: str):
+    """Download one of a finished run's files: report, crossings, detections
+    or summary."""
+    parts = DOWNLOADS.get(kind)
+    if parts is None:
+        raise HTTPException(400, "Unknown download")
+    folder = _final_dir(video_id)
+    if folder is None:
+        raise HTTPException(404, "Results not found")
+    file_path = folder.joinpath(*parts)
+    if not file_path.is_file():
         raise HTTPException(404, "File not found")
-    if not filename.endswith((".csv", ".json")):
-        raise HTTPException(400, "Only CSV and JSON files can be downloaded")
-    return FileResponse(file_path, filename=filename)
+    # The report is named after the run so two downloads can be told apart.
+    name = f"{folder.name}.xlsx" if kind == "report" else parts[-1]
+    return FileResponse(file_path, filename=name)
+
+
+@app.post("/api/open-folder/{video_id}")
+def open_folder(video_id: str):
+    """Show a finished run's folder in the file manager of the machine the
+    server runs on. Only ever opens that run's own Final Results folder."""
+    folder = _final_dir(video_id)
+    if folder is None:
+        raise HTTPException(404, "Results not found")
+    try:
+        if sys.platform.startswith("win"):
+            os.startfile(str(folder))
+        else:
+            import subprocess
+            subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", str(folder)])
+    except Exception as exc:
+        raise HTTPException(500, f"Could not open the folder: {exc}")
+    return {"opened": str(folder)}
 
 
 # ── Static file serving ────────────────────────────────────────────────────
@@ -707,9 +763,6 @@ def _run_processing(
             b64 = base64.b64encode(buffer).decode("utf-8")
             frame_sender.send(b64)
 
-        # Import summary writers
-        from core.processor import _write_native_summary, _write_canonical_summary
-
         _ws_send_sync(websocket, loop, "status", {"text": "Processing..."})
         print("[Processing] Starting run_single_model()...")
 
@@ -756,32 +809,43 @@ def _run_processing(
             return
 
         # Wrap into the multi-model envelope the results page expects
+        import datetime
+        finished_at = datetime.datetime.now()
         cap2 = cv2.VideoCapture(video_path)
+        video_fps = cap2.get(cv2.CAP_PROP_FPS) or 30.0
+        video_frames = int(cap2.get(cv2.CAP_PROP_FRAME_COUNT))
+        # The upload is stored under its id, so the name the user knows the
+        # video by is the one recorded at upload.
+        source_filename = meta.get("filename") or os.path.basename(video_path)
         result = {
+            "video_id": video_id,
             "video": video_path,
-            "video_name": os.path.splitext(os.path.basename(video_path))[0],
+            "video_name": os.path.splitext(os.path.basename(source_filename))[0],
+            "source_filename": source_filename,
+            "processed_at": finished_at.isoformat(timespec="seconds"),
             "resolution": f"{int(cap2.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap2.get(cv2.CAP_PROP_FRAME_HEIGHT))}",
-            "fps": cap2.get(cv2.CAP_PROP_FPS) or 30.0,
-            "total_frames": int(cap2.get(cv2.CAP_PROP_FRAME_COUNT)),
+            "fps": video_fps,
+            "total_frames": video_frames,
+            "duration_seconds": round(video_frames / video_fps, 2) if video_fps > 0 else 0,
+            "counting_method": COUNTING_METHOD,
+            "app_version": get_latest_version(),
             "models": {model.name: single_result},
         }
         cap2.release()
 
-        # Write files the results page needs for downloads
-        _write_native_summary(
-            os.path.join(str(output_dir), "vehicle_summary.csv"),
-            result["models"],
+        # Aakar's categories and the message for WhatsApp travel with the
+        # results, so the page, the report and the message agree.
+        final_results.add_categories(result)
+        result["share_text"] = final_results.build_share_text(result)
+
+        # Hand the run over: Final Results/<video> - <date time>/
+        folder = final_results.publish(
+            output_dir, result, road_labels, FINAL_RESULTS_DIR, finished_at
         )
-        _write_canonical_summary(
-            os.path.join(str(output_dir), "canonical_summary.csv"),
-            result["models"],
-        )
-        # Write summary.json (excluding internal keys)
-        summary_for_disk = {
-            k: v for k, v in result.items() if not k.startswith("_")
-        }
-        with open(os.path.join(str(output_dir), "summary.json"), "w") as sf:
-            json.dump(summary_for_disk, sf, indent=2)
+        final_dirs[video_id] = folder
+        print(f"[Processing] Final results saved to {folder}")
+        if result.get("report_error"):
+            print(f"[Processing] The Excel report could not be written: {result['report_error']}")
 
         print(f"[Processing] Complete. Crossings: {single_result.get('total_crossings', 0)}")
         # Send result summary
