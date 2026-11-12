@@ -10,7 +10,7 @@ Until now a finished run left a handful of loose CSV files in a folder named wit
 
 ---
 
-## Unreleased
+## v1.3.0
 
 ### What's added
 
