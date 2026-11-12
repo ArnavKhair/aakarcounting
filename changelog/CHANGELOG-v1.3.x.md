@@ -2,7 +2,7 @@
 
 Results that are easy to read and easy to pass on.
 
-**Branch:** `v1.3.x`
+**Branch:** `v1.3.0`
 
 ## Version Goal
 
