@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 .DS_Store
 outputs/
+Final Results/
 *.app/
 .vehicle_ai_launch.command
 launch.log

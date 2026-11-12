@@ -8,7 +8,7 @@ entry *is* the version bump. Never put a version number anywhere else.
 
 ### Log while you work
 
-At the top of the current parent changelog (`changelog/CHANGELOG-v1.2.x.md`), directly under the
+At the top of the current parent changelog (`changelog/CHANGELOG-v1.3.x.md`), directly under the
 `## Version Goal` block and its `---`, keep a section headed exactly `## Unreleased`:
 
 ```markdown
